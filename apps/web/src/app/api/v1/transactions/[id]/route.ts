@@ -1,7 +1,13 @@
 import { TransactionInput } from '@kosh/contracts';
 import { requireUser } from '@/server/auth';
 import { HttpError, ok, readJson, route } from '@/server/http';
-import { applyLedgerChange, getActiveTxn, MANUAL_ACCOUNT, toLedgerFields } from '@/server/ledger';
+import {
+  applyLedgerChange,
+  getActiveTxn,
+  MANUAL_ACCOUNT,
+  resolveCurrency,
+  toLedgerFields,
+} from '@/server/ledger';
 
 type Ctx = RouteContext<'/api/v1/transactions/[id]'>;
 
@@ -21,10 +27,16 @@ export const PATCH = route(async (req: Request, ctx: Ctx) => {
       'A transaction cannot be moved to another holding',
     );
   }
+  const money = await resolveCurrency(
+    uid,
+    input.instrumentId,
+    input.tradeDate,
+    'fxRate' in input ? input.fxRate : undefined,
+  );
   const result = await applyLedgerChange(uid, {
     add: [
       {
-        fields: toLedgerFields(input, MANUAL_ACCOUNT),
+        fields: toLedgerFields(input, MANUAL_ACCOUNT, money),
         ...(input.note ? { note: input.note } : {}),
       },
     ],

@@ -14,6 +14,8 @@ export interface MoneyOptions {
   signed?: boolean;
   /** Fraction digits for the full form (default 2). */
   decimals?: number;
+  /** Currency of the amount (default INR). USD always uses international grouping. */
+  currency?: 'INR' | 'USD';
 }
 
 const MINUS = '−';
@@ -35,10 +37,27 @@ function withSign(n: number, body: string, signed: boolean) {
 }
 
 export function formatMoney(value: number | string, options: MoneyOptions = {}): string {
-  const { style = 'indian', compact = false, signed = false, decimals = 2 } = options;
+  const {
+    style = 'indian',
+    compact = false,
+    signed = false,
+    decimals = 2,
+    currency = 'INR',
+  } = options;
   const n = toNumber(value);
   const abs = Math.abs(n);
   let body: string;
+
+  if (currency === 'USD') {
+    body = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      ...(compact && abs >= 1000
+        ? { notation: 'compact' as const, maximumFractionDigits: 2 }
+        : { minimumFractionDigits: decimals, maximumFractionDigits: decimals }),
+    }).format(abs);
+    return withSign(n, body, signed);
+  }
 
   if (compact && style === 'indian' && abs >= LAKH) {
     const [unit, size] = abs >= CRORE ? ['Cr', CRORE] : ['L', LAKH];

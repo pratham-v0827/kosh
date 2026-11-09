@@ -8,6 +8,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ErrorState } from '@/components/empty-state';
 import { Change, Money } from '@/components/num';
+import { formatAsOf, PriceBadge, sourceLabel } from '@/components/price-badge';
 import { PriceDialog } from '@/components/price-dialog';
 import { useFormat } from '@/components/providers/settings-provider';
 import { TransactionDialog, TXN_LABELS } from '@/components/transaction-dialog';
@@ -47,14 +48,17 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
 }
 
 function describeTxn(t: TxnRow, f: ReturnType<typeof useFormat>) {
+  const currency = t.currency ?? 'INR';
+  const m = (v: string) => f.money(v, { currency });
+  const fx = currency === 'USD' && t.fxRate ? ` @ ₹${t.fxRate}/$` : '';
   switch (t.type) {
     case 'BUY':
     case 'SELL':
     case 'OPENING_BALANCE':
-      return `${f.qty(t.qty ?? '0')} × ${f.money(t.price ?? '0')}${t.fees ? ` + ${f.money(t.fees)} charges` : ''}`;
+      return `${f.qty(t.qty ?? '0')} × ${m(t.price ?? '0')}${t.fees ? ` + ${m(t.fees)} charges` : ''}${fx}`;
     case 'DIVIDEND':
     case 'FEE':
-      return f.money(t.amount ?? '0');
+      return `${m(t.amount ?? '0')}${fx}`;
     case 'SPLIT':
     case 'BONUS':
       return `${t.ratio?.from}:${t.ratio?.to}`;
@@ -131,9 +135,11 @@ export function HoldingDetail() {
       ? f.percent(single.xirr, { signed: true })
       : single?.xirrNote === 'TOO_SHORT'
         ? `Shown after ${MIN_XIRR_DAYS} days`
-        : single?.xirrNote === 'NO_PRICE'
-          ? 'Needs a price'
-          : '—';
+        : single?.xirrNote === 'NO_FX'
+          ? 'Needs USD/INR rate'
+          : single?.xirrNote === 'NO_PRICE'
+            ? 'Needs a price'
+            : '—';
   const lots = holdings.flatMap((h) => h.lots);
   const closed = Number(row.qty) === 0;
 
@@ -177,7 +183,8 @@ export function HoldingDetail() {
         <div className="flex flex-wrap gap-2">
           <PriceDialog
             instrumentId={instrumentId}
-            current={row.price?.price}
+            currency={row.currency}
+            current={row.price?.source === 'manual' ? row.price.price : undefined}
             trigger={
               <Button variant="outline" size="sm">
                 <Tag aria-hidden /> {row.price ? 'Update price' : 'Set price'}
@@ -186,6 +193,7 @@ export function HoldingDetail() {
           />
           <TransactionDialog
             instrumentId={instrumentId}
+            currency={row.currency}
             trigger={
               <Button size="sm">
                 <Plus aria-hidden /> Add transaction
@@ -199,16 +207,30 @@ export function HoldingDetail() {
         <CardContent>
           <dl className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
             <Stat label="Quantity">{f.qty(row.qty)}</Stat>
-            <Stat label="Average cost">{f.money(row.avgCost)}</Stat>
+            <Stat label="Average cost">
+              {f.money(row.avgCostCcy, { currency: row.currency })}
+              {row.currency === 'USD' && (
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {f.money(row.avgCost)} at purchase FX
+                </span>
+              )}
+            </Stat>
             <Stat label="Invested">
               <Money value={row.invested} />
             </Stat>
-            <Stat label={row.price ? `Price · as of ${row.price.asOf}` : 'Price'}>
+            <Stat label="Price">
               {row.price ? (
-                f.money(row.price.price)
+                <>
+                  {f.money(row.price.price, { currency: row.price.currency })}
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    {sourceLabel(row.price.source)} · {formatAsOf(row.price.asOf)}
+                    {row.fxRate ? ` · ₹${row.fxRate}/$` : ''}
+                  </span>
+                </>
               ) : (
                 <span className="text-base text-warn">Not set</span>
               )}
+              <PriceBadge status={row.priceStatus} price={row.price} className="mt-1" />
             </Stat>
             <Stat label="Current value">
               <Money value={row.value} />
@@ -221,9 +243,20 @@ export function HoldingDetail() {
                 stacked
               />
             </Stat>
+            <Stat label="Day change">
+              <Change value={row.dayChange} pct={row.dayChangePct} className="text-base" stacked />
+            </Stat>
             <Stat label="Realised P&L">
               <Change value={row.realised} className="text-base" />
             </Stat>
+            {row.currency === 'USD' && row.fxEffect !== null && (
+              <Stat label="Of which: stock / currency">
+                <span className="flex flex-col gap-0.5 text-base">
+                  <Change value={row.stockEffect} showPct={false} className="text-sm" />
+                  <Change value={row.fxEffect} showPct={false} className="text-sm" />
+                </span>
+              </Stat>
+            )}
             <Stat label="XIRR (annualised)">
               <span
                 className={
@@ -239,6 +272,12 @@ export function HoldingDetail() {
           {row.price?.source === 'manual' && (
             <p className="mt-4 text-xs text-muted-foreground">
               Manual, indicative price entered by you.
+            </p>
+          )}
+          {row.currency === 'USD' && row.fxEffect !== null && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              P&amp;L in ₹ splits into the share-price move (at today’s rate) and the USD/INR move
+              since each purchase.
             </p>
           )}
         </CardContent>
@@ -282,6 +321,7 @@ export function HoldingDetail() {
                         <>
                           <TransactionDialog
                             instrumentId={instrumentId}
+                            currency={row.currency}
                             existing={t}
                             trigger={
                               <Button

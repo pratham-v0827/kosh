@@ -19,10 +19,12 @@ import { api } from '@/lib/api';
 
 export function PriceDialog({
   instrumentId,
+  currency = 'INR',
   current,
   trigger,
 }: {
   instrumentId: string;
+  currency?: 'INR' | 'USD';
   current?: string;
   trigger: ReactNode;
 }) {
@@ -64,10 +66,15 @@ export function PriceDialog({
           <DialogHeader>
             <DialogTitle>Update price</DialogTitle>
             <DialogDescription>
-              A manual, indicative price. Public unlisted-share quotes vary widely between sites.
+              A manual price. If an automatic source later has a newer price, that is used instead.
+              Unlisted-share quotes are indicative and vary between sites.
             </DialogDescription>
           </DialogHeader>
-          <Field id="manual-price" label="Price per unit (₹)" error={errors.price}>
+          <Field
+            id="manual-price"
+            label={`Price per unit (${currency === 'USD' ? '$' : '₹'})`}
+            error={errors.price}
+          >
             <Input name="price" inputMode="decimal" defaultValue={current} autoComplete="off" />
           </Field>
           <Field id="manual-asof" label="As of" error={errors.asOf}>

@@ -31,6 +31,8 @@
   --gain: #15803d;
   --loss: #b91c1c;
   --warn: #b45309;
+  /* text on tinted warn backgrounds (badges): ≥ 4.5:1 */
+  --warn-fg: #92400e;
 
   --chart-1: #4f46e5;
   --chart-2: #0d9488;
@@ -64,6 +66,7 @@
     --gain: #4ade80;
     --loss: #f87171;
     --warn: #fbbf24;
+    --warn-fg: #fcd34d;
   }
 }
 
@@ -90,4 +93,5 @@
   --gain: #4ade80;
   --loss: #f87171;
   --warn: #fbbf24;
+  --warn-fg: #fcd34d;
 }

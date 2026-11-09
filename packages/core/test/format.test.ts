@@ -27,6 +27,12 @@ describe('formatMoney (docs/PLAN.md §6.5)', () => {
     expect(formatMoney(0, { signed: true })).toBe('₹0.00');
   });
 
+  it('formats USD amounts with US grouping', () => {
+    expect(formatMoney(228.1, { currency: 'USD' })).toBe('$228.10');
+    expect(formatMoney(1234567, { currency: 'USD', style: 'indian' })).toBe('$1,234,567.00');
+    expect(formatMoney(-2.5, { currency: 'USD', signed: true })).toBe(`${MINUS}$2.50`);
+  });
+
   it('rejects non-numeric input', () => {
     expect(() => formatMoney('abc')).toThrow(RangeError);
   });

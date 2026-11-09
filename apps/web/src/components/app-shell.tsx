@@ -1,10 +1,11 @@
 'use client';
 
-import { LayoutDashboard, List, LogOut, Plus, Settings } from 'lucide-react';
+import { History, LayoutDashboard, List, LogOut, Plus, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
+import { RefreshControl } from '@/components/refresh-control';
 import { useAuth } from '@/components/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,6 +21,7 @@ import { cn } from '@/lib/utils';
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/holdings', label: 'Holdings', icon: List },
+  { href: '/history', label: 'History', icon: History },
   { href: '/manual/new', label: 'Add holding', icon: Plus },
   { href: '/settings', label: 'Settings', icon: Settings },
 ] as const;
@@ -42,7 +44,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-6 px-4">
           <Logo href="/dashboard" size={28} />
           <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
-            {NAV.slice(0, 3).map((n) => (
+            {NAV.filter((n) => n.href !== '/settings').map((n) => (
               <Link
                 key={n.href}
                 href={n.href}
@@ -56,7 +58,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Link>
             ))}
           </nav>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <RefreshControl compact />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" aria-label="Account menu" className="gap-2">
@@ -73,6 +76,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {user?.email ?? 'Signed in'}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => router.push('/history')}>
+                  <History aria-hidden /> Refresh history
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => router.push('/settings')}>
                   <Settings aria-hidden /> Settings
                 </DropdownMenuItem>
@@ -103,7 +109,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         aria-label="Main"
         className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
       >
-        {NAV.map((n) => (
+        {NAV.filter((n) => n.href !== '/history').map((n) => (
           <Link
             key={n.href}
             href={n.href}

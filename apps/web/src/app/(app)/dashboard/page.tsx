@@ -112,8 +112,14 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Prices are manual for now. Live prices and “Last refreshed” arrive with the price
-            engine.
+            Values in ₹. Mutual funds and crypto update automatically; other holdings use the price
+            you set.
+            {data.fx && (
+              <>
+                {' '}
+                USD at ₹{data.fx.rate} ({data.fx.asOf}, ECB reference).
+              </>
+            )}
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -134,6 +140,11 @@ export default function DashboardPage() {
               {t.unpricedCount} holding{t.unpricedCount > 1 ? 's' : ''} without a price not included
             </p>
           )}
+          {t.staleCount > 0 && (
+            <p className="mt-1 text-xs font-normal text-warn">
+              Includes {t.staleCount} stale price{t.staleCount > 1 ? 's' : ''}
+            </p>
+          )}
         </Kpi>
         <Kpi
           label="Invested"
@@ -148,17 +159,31 @@ export default function DashboardPage() {
             className="text-xl"
             stacked
           />
+          {Number(t.realised) !== 0 && (
+            <p className="mt-1 text-xs font-normal text-muted-foreground">
+              Realised on sales: <Change value={t.realised} className="text-xs" showPct={false} />
+            </p>
+          )}
         </Kpi>
         <Kpi
-          label="Realised P&L"
-          explain="Profit or loss already booked on sales, matched first-in-first-out."
+          label="Day change"
+          explain="Move since the previous close or NAV (24 hours for crypto), including the USD/INR move for US holdings. Holdings without a previous price are left out."
         >
-          <Change value={t.realised} className="text-xl" />
+          {t.dayChangeCount > 0 ? (
+            <Change value={t.dayChange} pct={t.dayChangePct} className="text-xl" stacked />
+          ) : (
+            <>
+              <span className="text-muted-foreground">—</span>
+              <p className="mt-1 text-xs font-normal text-muted-foreground">
+                Appears once a holding has a previous close or NAV.
+              </p>
+            </>
+          )}
         </Kpi>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-2">
+        <Card className="min-w-0 lg:col-span-2">
           <CardHeader>
             <CardTitle>Allocation by cost</CardTitle>
             <CardDescription>Share of the amount invested in each asset type.</CardDescription>
@@ -189,7 +214,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3">
+        <Card className="min-w-0 lg:col-span-3">
           <CardHeader className="flex items-center justify-between">
             <div>
               <CardTitle>Largest holdings</CardTitle>

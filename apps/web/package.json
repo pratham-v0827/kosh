@@ -12,6 +12,7 @@
   "dependencies": {
     "@kosh/contracts": "workspace:*",
     "@kosh/core": "workspace:*",
+    "@kosh/prices": "workspace:*",
     "@kosh/ui": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",

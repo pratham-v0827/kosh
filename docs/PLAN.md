@@ -608,6 +608,8 @@ service firebase.storage {
 
 ### 6.1 Price sources
 
+> **Update 2026-11-09 (M2):** NSE/BSE bhavcopy downloads refused automated clients, and Kosh does not work around bot protection, so Indian equities are **manual** until a permitted source is chosen. See ADR-0019 and docs/prices.md. The rest of the table stands.
+
 | Asset class | Primary | Fallback | Reliability / latency | Limits / terms | Notes |
 |---|---|---|---|---|---|
 | Indian equity (EOD) | **NSE bhavcopy** (official daily file; one download = all symbols) | **BSE bhavcopy** | Official; available after close | NSE data is subject to NSEIL Terms of Use [S21]. Redistribution terms **unverified**. We store only the closes of held instruments, per user | Covers delisted detection (symbol disappears) |

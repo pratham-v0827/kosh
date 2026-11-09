@@ -193,5 +193,127 @@ check(
 book = await readDoc(`users/${alice.uid}/book/current`);
 check('book empty after delete', str(field(book, 'totals', 'holdingsCount')) === '0');
 
+// =================== M2: prices, FX, refresh, snapshots, daily job ===================
+// Uses LIVE public sources (AMFI NAV file, CoinDCX ticker, Frankfurter/ECB). Symbols only.
+console.log('\n— M2 (live public price sources) —');
+const carol = await emulatorUser();
+await call(carol.token, 'POST', '/api/v1/session');
+
+const mf = await call(carol.token, 'POST', '/api/v1/holdings/manual', {
+  instrument: {
+    name: 'ICICI Prudential Gilt Fund - Direct Growth',
+    assetClass: 'MUTUAL_FUND',
+    symbol: '120590',
+  },
+  qty: '100',
+  price: '100',
+  tradeDate: '2025-01-01',
+});
+check('add mutual fund (AMFI code 120590) → 201', mf.status === 201, JSON.stringify(mf.body));
+const btc = await call(carol.token, 'POST', '/api/v1/holdings/manual', {
+  instrument: { name: 'Bitcoin', assetClass: 'CRYPTO', symbol: 'BTC' },
+  qty: '0.01',
+  price: '6000000',
+  tradeDate: '2025-06-01',
+});
+check('add crypto (BTC) → 201', btc.status === 201);
+const aapl = await call(carol.token, 'POST', '/api/v1/holdings/manual', {
+  instrument: { name: 'Apple', assetClass: 'US_EQUITY', symbol: 'AAPL' },
+  qty: '5',
+  price: '180',
+  tradeDate: '2025-03-15', // a Saturday → ECB rate of Fri 14 Mar
+});
+check('add US stock → 201', aapl.status === 201, JSON.stringify(aapl.body));
+const aaplTxn = await readDoc(`users/${carol.uid}/transactions/${aapl.body?.transactionId}`);
+check(
+  'US buy stored in USD with trade-date ECB rate (86.94)',
+  str(field(aaplTxn, 'currency')) === 'USD' && str(field(aaplTxn, 'fxRate')) === '86.94',
+  JSON.stringify(aaplTxn?.fields)?.slice(0, 200),
+);
+
+const r1 = await call(carol.token, 'POST', '/api/v1/refresh');
+check(
+  'refresh → 200 with snapshot id',
+  r1.status === 200 && typeof r1.body?.snapshotId === 'string',
+  JSON.stringify(r1.body)?.slice(0, 300),
+);
+check(
+  // Fresh or from the shared cache (AMFI is cached 6 h, CoinDCX 5 min), but never unpriced.
+  'mutual fund and crypto have provider prices',
+  !r1.body?.unpriced?.includes('MUTUAL_FUND:120590') && !r1.body?.unpriced?.includes('CRYPTO:BTC'),
+  JSON.stringify({ sources: r1.body?.sources, unpriced: r1.body?.unpriced }),
+);
+check(
+  'US price unavailable without a key, reported (not silently zero)',
+  r1.body?.unpriced?.includes('US_EQUITY:AAPL') &&
+    r1.body?.problems?.some((p) => p.provider === 'finnhub'),
+  JSON.stringify(r1.body?.problems),
+);
+
+const cbook = await readDoc(`users/${carol.uid}/book/current`);
+const mfH = field(cbook, 'holdings', 'manual|MUTUAL_FUND:120590');
+check(
+  'MF valued from AMFI NAV',
+  str(field(mfH, 'price', 'source')) === 'amfi-navall' && Number(str(field(mfH, 'value'))) > 0,
+);
+check(
+  'book has lastRefresh + USD→INR fx',
+  !!field(cbook, 'lastRefresh', 'snapshotId') && Number(str(field(cbook, 'fx', 'rate'))) > 50,
+);
+check(
+  'AAPL shown as missing price, not zero',
+  str(field(cbook, 'holdings', 'manual|US_EQUITY:AAPL', 'priceStatus')) === 'missing',
+);
+
+const snap = await readDoc(`users/${carol.uid}/snapshots/${r1.body?.snapshotId}`);
+const rows = field(snap, 'rows')?.arrayValue?.values ?? [];
+check(
+  'snapshot is immutable record with rows + trigger',
+  str(field(snap, 'trigger')) === 'manual' && rows.length === 3,
+  `rows=${rows.length}`,
+);
+const series = await readDoc(`users/${carol.uid}/series/${today.slice(0, 4)}`);
+check("series has today's point", !!field(series, 'd', today));
+
+const r2 = await call(carol.token, 'POST', '/api/v1/refresh');
+check(
+  'second refresh within 5 min → 429 cooldown',
+  r2.status === 429 &&
+    r2.body?.error?.code === 'REFRESH_COOLDOWN' &&
+    r2.body?.error?.details?.retryAfter > 0,
+  JSON.stringify(r2.body),
+);
+
+const cachedPrice = await readDoc('prices/MUTUAL_FUND:120590');
+check(
+  'shared price cache holds no user data',
+  !!cachedPrice && !JSON.stringify(cachedPrice).includes(carol.uid),
+);
+const tracked = await readDoc('trackedInstruments/MUTUAL_FUND:120590');
+check(
+  'tracked instrument registered without user id',
+  !!tracked && !JSON.stringify(tracked).includes(carol.uid),
+);
+
+// --- daily job ---
+const cron = (auth) =>
+  fetch(`${BASE}/api/cron/daily?chain=0`, { headers: auth ? { authorization: auth } : {} });
+check('cron without secret → 401', (await cron(null)).status === 401);
+const c1 = await cron(`Bearer ${process.env.CRON_SECRET ?? 'local-dev-cron-secret'}`);
+const c1b = await c1.json();
+check(
+  'cron → 200, prices refreshed, users snapshotted',
+  c1.status === 200 && c1b.users?.processed >= 1 && c1b.prices?.tracked >= 2,
+  JSON.stringify(c1b)?.slice(0, 300),
+);
+const c2b = await (
+  await cron(`Bearer ${process.env.CRON_SECRET ?? 'local-dev-cron-secret'}`)
+).json();
+check(
+  'cron is idempotent per day (second run snapshots nobody)',
+  c2b.users?.processed === 0,
+  JSON.stringify(c2b.users),
+);
+
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll API smoke checks passed');
 process.exit(failures ? 1 : 0);

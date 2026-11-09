@@ -43,6 +43,7 @@
   --color-gain: var(--gain);
   --color-loss: var(--loss);
   --color-warn: var(--warn);
+  --color-warn-fg: var(--warn-fg);
   --color-gold: var(--gold);
   --color-brand-deep: var(--brand-deep);
   --radius-sm: calc(var(--radius) * 0.6);

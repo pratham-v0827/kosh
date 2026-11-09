@@ -27,7 +27,9 @@ describe('buildPositions — FIFO (docs/PLAN.md §6.5)', () => {
     expect(p.qty).toBe('5');
     expect(p.openCost).toBe('600');
     expect(p.avgCost).toBe('120');
-    expect(p.lots).toEqual([{ date: '2024-02-10', qty: '5', unitCost: '120' }]);
+    expect(p.lots).toEqual([
+      { date: '2024-02-10', qty: '5', unitCost: '120', unitCostCcy: '120', fx: '1' },
+    ]);
   });
 
   it('applies a 1:2 split → 10 @60, cost unchanged', () => {
@@ -48,7 +50,7 @@ describe('buildPositions — FIFO (docs/PLAN.md §6.5)', () => {
     expect(p.qty).toBe('10');
     expect(p.openCost).toBe('600');
     expect(p.avgCost).toBe('60');
-    expect(p.lots.at(-1)).toEqual({ date: '2024-04-01', qty: '5', unitCost: '0' });
+    expect(p.lots.at(-1)).toMatchObject({ date: '2024-04-01', qty: '5', unitCost: '0' });
   });
 
   it('is independent of input order', () => {
@@ -180,6 +182,8 @@ describe('valuation', () => {
       value: '1100',
       unrealised: '100',
       unrealisedPct: 0.1,
+      stockEffect: null,
+      fxEffect: null,
     });
   });
 

@@ -90,7 +90,9 @@ export const ManualHoldingInput = z.object({
   price: DecimalString,
   fees: DecimalString.optional(),
   tradeDate: IsoDate,
-  /** Current price per unit you want to value it at (required for unlisted shares in M1). */
+  /** USD→INR on the trade date, for US holdings. Blank = ECB reference rate for that date. */
+  fxRate: PositiveDecimalString.optional(),
+  /** Current price per unit, in the holding's currency (needed for unlisted shares). */
   currentPrice: DecimalString.optional(),
   note,
 });
@@ -109,6 +111,7 @@ export const TransactionInput = z.discriminatedUnion('type', [
     qty: PositiveDecimalString,
     price: DecimalString,
     fees: DecimalString.optional(),
+    fxRate: PositiveDecimalString.optional(),
     note,
   }),
   z.object({
@@ -116,6 +119,7 @@ export const TransactionInput = z.discriminatedUnion('type', [
     instrumentId: z.string().min(1).max(80),
     tradeDate: IsoDate,
     amount: PositiveDecimalString,
+    fxRate: PositiveDecimalString.optional(),
     note,
   }),
   z.object({

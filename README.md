@@ -10,7 +10,7 @@
   can ask Claude about your own portfolio.
 </p>
 
-> **Status: pre-alpha (Milestone 1).** Sign-in, manual and unlisted holdings with FIFO cost, P&L and XIRR work locally. Live prices and imports come next.
+> **Status: pre-alpha (Milestone 2).** Sign-in, manual holdings, live prices for mutual funds (AMFI) and crypto (CoinDCX), USD holdings with FX, refresh snapshots and "Last refreshed" work locally. Indian stock prices are manual for now ([why](docs/prices.md#why-indian-stocks-are-manual-for-now)). Imports come next.
 > See the [roadmap](docs/PLAN.md#12-roadmap--milestones).
 
 > **Disclaimer:** Kosh is **not investment advice** and is **not affiliated with** Zerodha, Groww,
@@ -72,6 +72,8 @@ The emulator UI is at http://127.0.0.1:4000.
 | `pnpm lint` / `pnpm typecheck`      | Static checks                                                              |
 | `pnpm test`                         | Unit tests (portfolio maths)                                               |
 | `pnpm test:rules`                   | Firestore security-rules tests against the emulator                        |
+| `pnpm seed [email]`                 | Create a demo account with fake holdings (local emulators only)            |
+| `pnpm cron`                         | Run the daily price + snapshot job locally                                 |
 | `pnpm smoke`                        | End-to-end API checks (needs `pnpm dev:all` running; local emulators only) |
 | `pnpm format` / `pnpm format:check` | Prettier                                                                   |
 

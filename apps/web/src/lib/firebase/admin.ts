@@ -42,5 +42,14 @@ function createApp(): App {
 }
 
 /** Lazily initialised so `next build` never needs credentials. */
-export const adminDb = () => getFirestore(createApp());
+let configured = false;
+export const adminDb = () => {
+  const db = getFirestore(createApp());
+  if (!configured) {
+    // Optional fields are often absent; never fail a write because of an undefined value.
+    db.settings({ ignoreUndefinedProperties: true });
+    configured = true;
+  }
+  return db;
+};
 export const adminAuth = () => getAuth(createApp());

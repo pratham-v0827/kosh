@@ -58,7 +58,15 @@ describe('composeBook', () => {
   const book = composeBook(
     positions,
     instruments,
-    { 'UNLISTED:acme': { price: '220', asOf: '2024-01-01', source: 'manual' } },
+    {
+      'UNLISTED:acme': {
+        price: '220',
+        asOf: '2024-01-01',
+        source: 'manual',
+        currency: 'INR',
+        status: 'fresh',
+      },
+    },
     '2024-01-01',
   );
 
@@ -109,7 +117,15 @@ describe('composeBook', () => {
     const b = composeBook(
       multi,
       instruments,
-      { 'UNLISTED:acme': { price: '220', asOf: '2024-01-01', source: 'manual' } },
+      {
+        'UNLISTED:acme': {
+          price: '220',
+          asOf: '2024-01-01',
+          source: 'manual',
+          currency: 'INR',
+          status: 'fresh',
+        },
+      },
       '2024-01-01',
     );
     const rows = groupByInstrument(b.holdings);
@@ -128,7 +144,15 @@ describe('composeBook', () => {
     const b = composeBook(
       positions,
       instruments,
-      { 'IN_EQUITY:INE002A01018': { price: '2500', asOf: '2024-01-10', source: 'manual' } },
+      {
+        'IN_EQUITY:INE002A01018': {
+          price: '2500',
+          asOf: '2024-01-10',
+          source: 'manual',
+          currency: 'INR',
+          status: 'fresh',
+        },
+      },
       '2024-01-10',
     );
     expect(b.holdings[positionKey('manual', 'IN_EQUITY:INE002A01018')]!.xirrNote).toBe('TOO_SHORT');

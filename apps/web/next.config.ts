@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
       validationLevel: 'manual-warning',
     },
   },
-  transpilePackages: ['@kosh/core'],
+  transpilePackages: ['@kosh/core', '@kosh/contracts', '@kosh/prices'],
   serverExternalPackages: ['firebase-admin'],
   poweredByHeader: false,
   turbopack: {

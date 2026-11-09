@@ -40,13 +40,17 @@ export const TXN_LABELS: Record<Kind | 'OPENING_BALANCE', string> = {
 
 export function TransactionDialog({
   instrumentId,
+  currency = 'INR',
   existing,
   trigger,
 }: {
   instrumentId: string;
+  currency?: 'INR' | 'USD';
   existing?: TxnRow;
   trigger: ReactNode;
 }) {
+  const usd = currency === 'USD';
+  const sym = usd ? '$' : '₹';
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<Kind>((existing?.type as Kind | undefined) ?? 'BUY');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -60,9 +64,9 @@ export function TransactionDialog({
     const common = { type, instrumentId, tradeDate: s('tradeDate') ?? '', note: s('note') };
     const candidate =
       type === 'BUY' || type === 'SELL'
-        ? { ...common, qty: s('qty'), price: s('price'), fees: s('fees') }
+        ? { ...common, qty: s('qty'), price: s('price'), fees: s('fees'), fxRate: s('fxRate') }
         : type === 'DIVIDEND' || type === 'FEE'
-          ? { ...common, amount: s('amount') }
+          ? { ...common, amount: s('amount'), fxRate: s('fxRate') }
           : { ...common, ratio: { from: Number(s('from')), to: Number(s('to')) } };
     const parsed = TransactionInput.safeParse(candidate);
     if (!parsed.success) {
@@ -146,7 +150,7 @@ export function TransactionDialog({
                     autoComplete="off"
                   />
                 </Field>
-                <Field id="txn-price" label="Price per unit (₹)" error={errors.price}>
+                <Field id="txn-price" label={`Price per unit (${sym})`} error={errors.price}>
                   <Input
                     name="price"
                     inputMode="decimal"
@@ -154,7 +158,7 @@ export function TransactionDialog({
                     autoComplete="off"
                   />
                 </Field>
-                <Field id="txn-fees" label="Charges (₹, optional)" error={errors.fees}>
+                <Field id="txn-fees" label={`Charges (${sym}, optional)`} error={errors.fees}>
                   <Input
                     name="fees"
                     inputMode="decimal"
@@ -166,7 +170,7 @@ export function TransactionDialog({
             )}
 
             {(type === 'DIVIDEND' || type === 'FEE') && (
-              <Field id="txn-amount" label="Amount (₹)" error={errors.amount}>
+              <Field id="txn-amount" label={`Amount (${sym})`} error={errors.amount}>
                 <Input
                   name="amount"
                   inputMode="decimal"
@@ -209,6 +213,22 @@ export function TransactionDialog({
                   </p>
                 ) : null}
               </div>
+            )}
+
+            {usd && type !== 'SPLIT' && type !== 'BONUS' && (
+              <Field
+                id="txn-fx"
+                label="USD→INR rate (optional)"
+                hint="Blank = ECB reference rate for that date."
+                error={errors.fxRate}
+              >
+                <Input
+                  name="fxRate"
+                  inputMode="decimal"
+                  defaultValue={existing?.fxRate}
+                  autoComplete="off"
+                />
+              </Field>
             )}
 
             <div className="sm:col-span-2">

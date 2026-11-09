@@ -21,6 +21,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { clientDb } from '@/lib/firebase/client';
+import { PriceSources } from './price-sources';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -191,6 +192,8 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      <PriceSources />
 
       <Card>
         <CardHeader>

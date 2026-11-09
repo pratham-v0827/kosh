@@ -19,11 +19,22 @@ import {
 import { api, ApiRequestError } from '@/lib/api';
 
 const SYMBOL_HINT: Record<AssetClass, string> = {
-  IN_EQUITY: 'ISIN (e.g. INE002A01018) or NSE symbol. Used later to fetch live prices.',
+  IN_EQUITY: 'ISIN (e.g. INE002A01018) or NSE symbol.',
   US_EQUITY: 'Ticker, e.g. AAPL.',
-  MUTUAL_FUND: 'AMFI scheme code or ISIN, if you know it.',
+  MUTUAL_FUND: 'AMFI scheme code (e.g. 120590) or ISIN. Needed for automatic daily NAV.',
   UNLISTED: 'Optional. ISIN if the company has one.',
-  CRYPTO: 'Coin symbol, e.g. BTC.',
+  CRYPTO: 'Coin symbol, e.g. BTC. Priced from the CoinDCX INR market.',
+};
+
+const PRICE_HINT: Record<AssetClass, string> = {
+  IN_EQUITY:
+    'Indian share prices are manual for now: there is no permitted free automatic source yet. Enter today’s price and update it when you like.',
+  US_EQUITY:
+    'Priced automatically when the instance has a free Finnhub or Twelve Data key; otherwise enter it here (in $).',
+  MUTUAL_FUND: 'Optional. With a scheme code, Kosh uses the official AMFI NAV on every refresh.',
+  UNLISTED:
+    'Kosh can’t fetch unlisted prices. Enter the latest indicative price you trust; you can update it anytime.',
+  CRYPTO: 'Optional. With a coin symbol, Kosh uses the CoinDCX INR price on every refresh.',
 };
 
 export default function NewManualHoldingPage() {
@@ -41,6 +52,7 @@ export default function NewManualHoldingPage() {
       qty: s('qty') ?? '',
       price: s('price') ?? '',
       fees: s('fees'),
+      fxRate: s('fxRate'),
       tradeDate: s('tradeDate') ?? '',
       currentPrice: s('currentPrice'),
       note: s('note'),
@@ -68,6 +80,8 @@ export default function NewManualHoldingPage() {
   }
 
   const unlisted = assetClass === 'UNLISTED';
+  const usd = assetClass === 'US_EQUITY';
+  const sym = usd ? '$' : '₹';
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -134,12 +148,12 @@ export default function NewManualHoldingPage() {
             <Field id="qty" label="Quantity" error={errors.qty}>
               <Input name="qty" inputMode="decimal" autoComplete="off" />
             </Field>
-            <Field id="price" label="Buy price per unit (₹)" error={errors.price}>
+            <Field id="price" label={`Buy price per unit (${sym})`} error={errors.price}>
               <Input name="price" inputMode="decimal" autoComplete="off" />
             </Field>
             <Field
               id="fees"
-              label="Charges (₹, optional)"
+              label={`Charges (${sym}, optional)`}
               hint="Brokerage, stamp duty, etc. Added to your cost."
               error={errors.fees}
             >
@@ -148,18 +162,28 @@ export default function NewManualHoldingPage() {
             <Field id="tradeDate" label="Buy date" error={errors.tradeDate}>
               <Input name="tradeDate" type="date" defaultValue={todayIST()} max={todayIST()} />
             </Field>
+            {usd && (
+              <Field
+                id="fxRate"
+                label="USD→INR rate you paid (optional)"
+                hint="Blank = ECB reference rate for the buy date."
+                error={errors.fxRate}
+              >
+                <Input name="fxRate" inputMode="decimal" autoComplete="off" />
+              </Field>
+            )}
           </CardContent>
 
           <CardHeader className="pt-2">
             <CardTitle>Current price</CardTitle>
-            <CardDescription>
-              {unlisted
-                ? 'Kosh can’t fetch unlisted prices. Enter the latest indicative price you trust; you can update it anytime.'
-                : 'Optional. Live prices for listed assets arrive with the price engine.'}
-            </CardDescription>
+            <CardDescription>{PRICE_HINT[assetClass]}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
-            <Field id="currentPrice" label="Current price per unit (₹)" error={errors.currentPrice}>
+            <Field
+              id="currentPrice"
+              label={`Current price per unit (${sym}, optional)`}
+              error={errors.currentPrice}
+            >
               <Input name="currentPrice" inputMode="decimal" autoComplete="off" />
             </Field>
             <Field id="note" label="Note (optional)" error={errors.note}>

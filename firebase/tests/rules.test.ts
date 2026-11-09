@@ -55,6 +55,45 @@ beforeEach(async () => {
   });
 });
 
+describe('snapshots, series and shared market data (M2)', () => {
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.doc('users/alice/snapshots/s1').set({ trigger: 'manual', totals: { value: '1' } });
+      await db.doc('users/alice/series/2026').set({ d: { '2026-11-09': { v: 1 } } });
+      await db.doc('prices/MUTUAL_FUND:120590').set({ price: '116.7', source: 'amfi-navall' });
+      await db.doc('fx/USDINR').set({ rate: '93.9' });
+      await db
+        .doc('trackedInstruments/MUTUAL_FUND:120590')
+        .set({ assetClass: 'MUTUAL_FUND', symbol: '120590' });
+    });
+  });
+
+  it('owner reads own snapshots and series; nobody else (incl. admin) can', async () => {
+    await assertSucceeds(alice().doc('users/alice/snapshots/s1').get());
+    await assertSucceeds(alice().doc('users/alice/series/2026').get());
+    await assertFails(bob().doc('users/alice/snapshots/s1').get());
+    await assertFails(admin().collection('users/alice/snapshots').get());
+  });
+
+  it('snapshots are immutable from clients', async () => {
+    await assertFails(
+      alice()
+        .doc('users/alice/snapshots/s1')
+        .update({ totals: { value: '999' } }),
+    );
+    await assertFails(alice().doc('users/alice/snapshots/s1').delete());
+  });
+
+  it('signed-in users read public prices and FX; tracked instruments are server-only', async () => {
+    await assertSucceeds(alice().doc('prices/MUTUAL_FUND:120590').get());
+    await assertSucceeds(alice().doc('fx/USDINR').get());
+    await assertFails(anon().doc('prices/MUTUAL_FUND:120590').get());
+    await assertFails(alice().doc('trackedInstruments/MUTUAL_FUND:120590').get());
+    await assertFails(alice().doc('prices/MUTUAL_FUND:120590').set({ price: '1' }));
+  });
+});
+
 describe('per-user instruments and manual prices (M1)', () => {
   it('owner can read their own instruments and manual prices', async () => {
     await assertSucceeds(alice().collection('users/alice/instruments').get());

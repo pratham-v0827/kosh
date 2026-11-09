@@ -68,15 +68,19 @@ export function Money({
   value,
   compact = false,
   className,
+  currency = 'INR',
 }: {
   value: string | number | null | undefined;
   compact?: boolean;
   className?: string;
+  currency?: 'INR' | 'USD';
 }) {
   const f = useFormat();
   if (value === null || value === undefined)
     return <span className="text-muted-foreground">—</span>;
   return (
-    <span className={cn('num whitespace-nowrap', className)}>{f.money(value, { compact })}</span>
+    <span className={cn('num whitespace-nowrap', className)}>
+      {f.money(value, { compact, currency })}
+    </span>
   );
 }

@@ -5,7 +5,10 @@ import { type CashFlow, xirr } from './xirr';
 /**
  * Ledger → positions. Transactions are the source of truth (ADR-0005); positions, cost basis,
  * realised P&L and cash flows are derived here, deterministically, using FIFO lots (ADR-0012).
- * All money is INR in M1; USD + FX arrives with the price engine (M2).
+ *
+ * Currencies: amounts on a transaction are in its `currency` (INR by default). USD transactions
+ * carry `fxRate` (INR per USD on the trade date); every lot keeps both its native unit cost and
+ * that FX rate, so INR P&L can be split into "stock" and "currency" effects.
  */
 
 export type AssetClass = 'IN_EQUITY' | 'US_EQUITY' | 'MUTUAL_FUND' | 'UNLISTED' | 'CRYPTO';
@@ -17,6 +20,7 @@ export const ASSET_CLASSES = [
   'CRYPTO',
 ] as const satisfies readonly AssetClass[];
 
+export type Currency = 'INR' | 'USD';
 export type TxnType = 'BUY' | 'SELL' | 'OPENING_BALANCE' | 'DIVIDEND' | 'FEE' | 'SPLIT' | 'BONUS';
 
 /** Ratio for corporate actions. SPLIT 1:2 → each share becomes 2. BONUS 1:1 → 1 free share per 1 held. */
@@ -34,14 +38,18 @@ export interface LedgerTxn {
   tradeDate: string;
   /** Units (BUY, SELL, OPENING_BALANCE). Decimal string. */
   qty?: string;
-  /** Price per unit in INR (BUY, SELL, OPENING_BALANCE). Decimal string. */
+  /** Price per unit in `currency` (BUY, SELL, OPENING_BALANCE). Decimal string. */
   price?: string;
-  /** Brokerage, taxes and charges in INR. Added to cost on buys, deducted from proceeds on sells. */
+  /** Brokerage, taxes and charges in `currency`. Added to cost on buys, deducted from proceeds on sells. */
   fees?: string;
-  /** Cash amount in INR (DIVIDEND, FEE). */
+  /** Cash amount in `currency` (DIVIDEND, FEE). */
   amount?: string;
   /** SPLIT / BONUS ratio. */
   ratio?: Ratio;
+  /** Currency of price/fees/amount. Default INR. */
+  currency?: Currency;
+  /** INR per 1 unit of `currency` on the trade date. Required for USD money events. */
+  fxRate?: string;
   /** Tie-breaker for transactions on the same date (e.g. createdAt millis). */
   seq?: number;
 }
@@ -49,19 +57,29 @@ export interface LedgerTxn {
 export interface Lot {
   date: string;
   qty: string;
-  /** Cost per unit including allocated buy fees. */
+  /** INR cost per unit including allocated buy fees. */
   unitCost: string;
+  /** Native-currency cost per unit including fees. Equals unitCost for INR. */
+  unitCostCcy: string;
+  /** FX rate used for this lot (1 for INR). */
+  fx: string;
 }
 
 export interface Position {
   key: string;
   accountId: string;
   instrumentId: string;
+  currency: Currency;
   qty: string;
-  /** Cost of the units still held (FIFO). */
+  /** INR cost of the units still held (FIFO). */
   openCost: string;
-  /** openCost / qty, or "0" when nothing is held. */
+  /** Native-currency cost of the units still held. */
+  openCostCcy: string;
+  /** openCost / qty (INR), or "0" when nothing is held. */
   avgCost: string;
+  /** openCostCcy / qty (native currency). */
+  avgCostCcy: string;
+  /** Realised P&L in INR (FX at sale vs FX at purchase included). */
   realised: string;
   dividends: string;
   fees: string;
@@ -74,6 +92,8 @@ export interface Position {
 export type LedgerErrorCode =
   | 'SELL_EXCEEDS_HOLDING'
   | 'MISSING_FIELD'
+  | 'MISSING_FX'
+  | 'CURRENCY_MISMATCH'
   | 'NON_POSITIVE_VALUE'
   | 'INVALID_RATIO'
   | 'NO_HOLDING_FOR_ACTION';
@@ -105,10 +125,19 @@ const DAY_ORDER: Record<TxnType, number> = {
   FEE: 3,
 };
 
+interface MutableLot {
+  date: string;
+  qty: Decimal;
+  unitCost: Decimal;
+  unitCostCcy: Decimal;
+  fx: Decimal;
+}
+
 interface MutablePosition {
   accountId: string;
   instrumentId: string;
-  lots: { date: string; qty: Decimal; unitCost: Decimal }[];
+  currency: Currency;
+  lots: MutableLot[];
   realised: Decimal;
   dividends: Decimal;
   fees: Decimal;
@@ -117,6 +146,7 @@ interface MutablePosition {
 }
 
 const ZERO = new Decimal(0);
+const ONE = new Decimal(1);
 
 function dec(value: string | undefined): Decimal | null {
   if (value === undefined || value === '') return null;
@@ -149,12 +179,30 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
 
   for (const t of sorted) {
     const key = positionKey(t.accountId, t.instrumentId);
+    const currency: Currency = t.currency ?? 'INR';
     let p = book.get(key);
+
+    if (p && p.currency !== currency && t.type !== 'SPLIT' && t.type !== 'BONUS') {
+      fail(t, 'CURRENCY_MISMATCH', `This holding is in ${p.currency}, not ${currency}`);
+      continue;
+    }
+
+    /** FX for money events: 1 for INR; required and positive for USD. */
+    const fxFor = (): Decimal | null => {
+      if (currency === 'INR') return ONE;
+      const fx = dec(t.fxRate);
+      if (!fx || fx.lte(0)) {
+        fail(t, 'MISSING_FX', 'A USD transaction needs the USD→INR rate for its date');
+        return null;
+      }
+      return fx;
+    };
     const ensure = () => {
       if (!p) {
         p = {
           accountId: t.accountId,
           instrumentId: t.instrumentId,
+          currency,
           lots: [],
           realised: ZERO,
           dividends: ZERO,
@@ -182,12 +230,21 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
           fail(t, 'NON_POSITIVE_VALUE', 'qty must be > 0; price and fees must be ≥ 0');
           break;
         }
+        const fx = fxFor();
+        if (!fx) break;
         const pos = ensure();
-        const gross = qty.times(price).plus(fees);
-        pos.lots.push({ date: t.tradeDate, qty, unitCost: gross.div(qty) });
-        pos.fees = pos.fees.plus(fees);
+        const grossCcy = qty.times(price).plus(fees);
+        const grossInr = grossCcy.times(fx);
+        pos.lots.push({
+          date: t.tradeDate,
+          qty,
+          unitCost: grossInr.div(qty),
+          unitCostCcy: grossCcy.div(qty),
+          fx,
+        });
+        pos.fees = pos.fees.plus(fees.times(fx));
         pos.firstAcquired ??= t.tradeDate;
-        addFlow(pos, t.tradeDate, gross.neg());
+        addFlow(pos, t.tradeDate, grossInr.neg());
         break;
       }
 
@@ -212,6 +269,8 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
           );
           break;
         }
+        const fx = fxFor();
+        if (!fx) break;
         const pos = ensure();
         let remaining = qty;
         let matchedCost = ZERO;
@@ -223,9 +282,9 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
           remaining = remaining.minus(take);
           if (lot.qty.isZero()) pos.lots.shift();
         }
-        const proceeds = qty.times(price).minus(fees);
+        const proceeds = qty.times(price).minus(fees).times(fx);
         pos.realised = pos.realised.plus(proceeds.minus(matchedCost));
-        pos.fees = pos.fees.plus(fees);
+        pos.fees = pos.fees.plus(fees.times(fx));
         addFlow(pos, t.tradeDate, proceeds);
         break;
       }
@@ -252,29 +311,21 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
           for (const lot of p.lots) {
             lot.qty = lot.qty.times(factor);
             lot.unitCost = lot.unitCost.div(factor);
+            lot.unitCostCcy = lot.unitCostCcy.div(factor);
           }
         } else {
-          p.lots.push({ date: t.tradeDate, qty: held().times(factor), unitCost: ZERO });
+          p.lots.push({
+            date: t.tradeDate,
+            qty: held().times(factor),
+            unitCost: ZERO,
+            unitCostCcy: ZERO,
+            fx: p.lots[0]?.fx ?? ONE,
+          });
         }
         break;
       }
 
-      case 'DIVIDEND': {
-        const amount = dec(t.amount);
-        if (!amount) {
-          fail(t, 'MISSING_FIELD', 'amount is required');
-          break;
-        }
-        if (amount.lte(0)) {
-          fail(t, 'NON_POSITIVE_VALUE', 'amount must be > 0');
-          break;
-        }
-        const pos = ensure();
-        pos.dividends = pos.dividends.plus(amount);
-        addFlow(pos, t.tradeDate, amount);
-        break;
-      }
-
+      case 'DIVIDEND':
       case 'FEE': {
         const amount = dec(t.amount);
         if (!amount) {
@@ -285,9 +336,17 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
           fail(t, 'NON_POSITIVE_VALUE', 'amount must be > 0');
           break;
         }
+        const fx = fxFor();
+        if (!fx) break;
         const pos = ensure();
-        pos.fees = pos.fees.plus(amount);
-        addFlow(pos, t.tradeDate, amount.neg());
+        const inr = amount.times(fx);
+        if (t.type === 'DIVIDEND') {
+          pos.dividends = pos.dividends.plus(inr);
+          addFlow(pos, t.tradeDate, inr);
+        } else {
+          pos.fees = pos.fees.plus(inr);
+          addFlow(pos, t.tradeDate, inr.neg());
+        }
         break;
       }
     }
@@ -297,13 +356,17 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
   for (const [key, p] of book) {
     const qty = p.lots.reduce((s, l) => s.plus(l.qty), ZERO);
     const openCost = p.lots.reduce((s, l) => s.plus(l.qty.times(l.unitCost)), ZERO);
+    const openCostCcy = p.lots.reduce((s, l) => s.plus(l.qty.times(l.unitCostCcy)), ZERO);
     positions[key] = {
       key,
       accountId: p.accountId,
       instrumentId: p.instrumentId,
+      currency: p.currency,
       qty: qty.toString(),
       openCost: openCost.toDecimalPlaces(4).toString(),
+      openCostCcy: openCostCcy.toDecimalPlaces(4).toString(),
       avgCost: qty.isZero() ? '0' : openCost.div(qty).toDecimalPlaces(4).toString(),
+      avgCostCcy: qty.isZero() ? '0' : openCostCcy.div(qty).toDecimalPlaces(4).toString(),
       realised: p.realised.toDecimalPlaces(4).toString(),
       dividends: p.dividends.toDecimalPlaces(4).toString(),
       fees: p.fees.toDecimalPlaces(4).toString(),
@@ -312,6 +375,8 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
         date: l.date,
         qty: l.qty.toString(),
         unitCost: l.unitCost.toDecimalPlaces(6).toString(),
+        unitCostCcy: l.unitCostCcy.toDecimalPlaces(6).toString(),
+        fx: l.fx.toString(),
       })),
       cashflows: [...p.flows.entries()]
         .sort(([a], [b]) => toEpochDay(a) - toEpochDay(b))
@@ -322,21 +387,79 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
 }
 
 export interface Valuation {
+  /** INR value. */
   value: string;
   unrealised: string;
   /** Unrealised / open cost; null when open cost is zero (e.g. bonus-only). */
   unrealisedPct: number | null;
+  /** INR P&L from the price move, at today's FX (null for INR holdings). */
+  stockEffect: string | null;
+  /** INR P&L from the FX move since each lot was bought (null for INR holdings). */
+  fxEffect: string | null;
 }
 
-/** Value a position at a unit price (INR). */
-export function valuePosition(position: Position, price: string): Valuation {
-  const value = new Decimal(position.qty).times(price);
+/**
+ * Value a position at a unit price in its own currency, converted at `fx` (INR per unit).
+ *   value       = qty × price × fx
+ *   stockEffect = Σ lot.qty × (price − lot.unitCostCcy) × fx
+ *   fxEffect    = Σ lot.qty × lot.unitCostCcy × (fx − lot.fx)
+ * stockEffect + fxEffect = value − openCost.
+ */
+export function valuePosition(position: Position, price: string, fx: string = '1'): Valuation {
+  const X = new Decimal(fx);
+  const P = new Decimal(price);
+  const value = new Decimal(position.qty).times(P).times(X);
   const cost = new Decimal(position.openCost);
   const unrealised = value.minus(cost);
+  let stock: Decimal | null = null;
+  let fxe: Decimal | null = null;
+  if (position.currency !== 'INR') {
+    stock = ZERO;
+    fxe = ZERO;
+    for (const l of position.lots) {
+      const q = new Decimal(l.qty);
+      stock = stock.plus(q.times(P.minus(l.unitCostCcy)).times(X));
+      fxe = fxe.plus(q.times(l.unitCostCcy).times(X.minus(l.fx)));
+    }
+  }
   return {
     value: value.toDecimalPlaces(2).toString(),
     unrealised: unrealised.toDecimalPlaces(2).toString(),
     unrealisedPct: cost.isZero() ? null : unrealised.div(cost).toNumber(),
+    stockEffect: stock?.toDecimalPlaces(2).toString() ?? null,
+    fxEffect: fxe?.toDecimalPlaces(2).toString() ?? null,
+  };
+}
+
+/**
+ * INR day change. Each lot moves from its base to today's value:
+ * base = previous close at the previous FX, or, for lots bought on/after the quote date,
+ * the purchase cost (so a position bought today shows only today's move from the buy price).
+ * Returns null when there is no previous close.
+ */
+export function dayChange(
+  position: Position,
+  quote: { price: string; prevClose?: string; asOf: string },
+  fx: { rate: string; prevRate?: string } = { rate: '1' },
+): { change: string; pct: number | null } | null {
+  if (!quote.prevClose) return null;
+  const X = new Decimal(fx.rate);
+  const X0 = new Decimal(fx.prevRate ?? fx.rate);
+  const P = new Decimal(quote.price);
+  const P0 = new Decimal(quote.prevClose);
+  const quoteDate = quote.asOf.slice(0, 10);
+  let change = ZERO;
+  let base = ZERO;
+  for (const l of position.lots) {
+    const q = new Decimal(l.qty);
+    const fresh = l.date >= quoteDate;
+    const b = fresh ? q.times(l.unitCostCcy).times(l.fx) : q.times(P0).times(X0);
+    base = base.plus(b);
+    change = change.plus(q.times(P).times(X).minus(b));
+  }
+  return {
+    change: change.toDecimalPlaces(2).toString(),
+    pct: base.isZero() ? null : change.div(base).toNumber(),
   };
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import type { BookTotals, HoldingView } from '@kosh/core';
+import type { BookTotals, FxInfo, HoldingView } from '@kosh/core';
 import { DEFAULT_SETTINGS, type Settings } from '@kosh/contracts';
 import { collection, doc, onSnapshot, query, type Timestamp, where } from 'firebase/firestore';
 import { useTheme } from 'next-themes';
@@ -14,6 +14,12 @@ export interface Book {
   updatedAt: Timestamp | null;
   holdings: Record<string, HoldingView>;
   totals: BookTotals;
+  fx: FxInfo | null;
+  lastRefresh?: {
+    at: Timestamp;
+    snapshotId: string;
+    trigger: 'manual' | 'scheduled' | 'import' | 'mcp';
+  };
 }
 
 export type Loadable<T> =
@@ -63,6 +69,8 @@ export interface TxnRow {
   fees?: string;
   amount?: string;
   ratio?: { from: number; to: number };
+  currency?: 'INR' | 'USD';
+  fxRate?: string;
   note?: string;
   seq?: number;
 }

@@ -33,9 +33,15 @@ Follow the README **Quick start**. It works on Windows, macOS and Linux. Windows
 
 ## 4. Adding a parser or price provider
 
-Guides arrive with M2/M3 (`docs/guides/adding-a-parser.md`, `docs/guides/adding-a-price-provider.md`).
+Adding a price provider: see [docs/prices.md](docs/prices.md#adding-a-provider). The parser guide arrives with M3 (`docs/guides/adding-a-parser.md`).
 Every parser is versioned (`zerodha.tradebook@1.0.0`) and implements `detect → validate → parse → normalise`.
 
-## 5. Code of conduct
+## 5. Troubleshooting
+
+- **The dev page reloads itself in a loop** after many files change at once (formatting, tests): stop `pnpm dev:all` and start it again.
+- **Signed in but seeing an empty ledger** after restarting the emulators: emulator data is wiped on restart; Kosh signs you out on the next load. Use `pnpm seed` to recreate demo data.
+- **Emulators fail to start**: they need JDK 21+ on `PATH`.
+
+## 6. Code of conduct
 
 Participation is governed by our [Code of Conduct](CODE_OF_CONDUCT.md).
