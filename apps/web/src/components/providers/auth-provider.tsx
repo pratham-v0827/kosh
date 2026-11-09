@@ -7,7 +7,8 @@ import {
   type User,
 } from 'firebase/auth';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
-import { api, ApiRequestError } from '@/lib/api';
+import { api } from '@/lib/api';
+import { sessionEndReason } from '@/lib/auth-errors';
 import { clientAuth } from '@/lib/firebase/client';
 
 interface AuthState {
@@ -42,13 +43,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             sessionStorage.setItem(flag, '1');
           }
         } catch (e) {
-          const status = e instanceof ApiRequestError ? e.status : undefined;
-          const code = (e as { code?: string }).code ?? '';
-          if (status === 401 || status === 403 || code.startsWith('auth/')) {
+          const reason = sessionEndReason(e);
+          if (reason) {
             sessionStorage.removeItem(flag);
             await fbSignOut(auth);
             setError(
-              status === 403 || code === 'auth/user-disabled'
+              reason === 'blocked'
                 ? 'This account is blocked.'
                 : 'Your session ended. Please sign in again.',
             );
