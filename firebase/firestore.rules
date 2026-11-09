@@ -1,0 +1,79 @@
+rules_version = '2';
+
+// Kosh Firestore security rules. See docs/PLAN.md §5.4 and ADR-0004.
+// Model: clients READ only their own data; ALL writes go through the server (Admin SDK),
+// except a narrowly validated settings update. Admins never get access to /users/**.
+// Note: the Admin SDK bypasses these rules — server code boundaries are enforced separately.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function notBlocked() { return request.auth.token.get('blocked', false) != true; }
+    function isAdmin() { return signedIn() && request.auth.token.get('role', 'user') == 'admin'; }
+
+    function validSettings(s) {
+      return s.keys().hasOnly(['baseCurrency', 'numberFormat', 'theme', 'staleness', 'email'])
+        && s.baseCurrency == 'INR'
+        && s.numberFormat in ['indian', 'international']
+        && s.theme in ['system', 'light', 'dark']
+        && (!('staleness' in s) || s.staleness is map)
+        && s.email.keys().hasOnly(['enabled', 'frequency', 'weekday', 'nextDueAt'])
+        && s.email.enabled is bool
+        && s.email.frequency in ['weekly', 'monthly']
+        && (!('weekday' in s.email)
+            || (s.email.weekday is int && s.email.weekday >= 0 && s.email.weekday <= 6))
+        // nextDueAt is server-managed: the client may not change it
+        && s.email.get('nextDueAt', null) == resource.data.settings.email.get('nextDueAt', null);
+    }
+
+    // ---------- default deny ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---------- private user data ----------
+    match /users/{uid} {
+      allow get: if isOwner(uid) && notBlocked();
+      allow update: if isOwner(uid) && notBlocked()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['settings', 'updatedAt'])
+        && validSettings(request.resource.data.settings)
+        && request.resource.data.updatedAt == request.time;
+      // create / delete: server only
+
+      // Readable subcollections. 'connections' (encrypted broker tokens) is intentionally
+      // absent, so it falls through to default deny for every client, including the owner.
+      match /{sub}/{docId} {
+        allow read: if isOwner(uid) && notBlocked()
+          && sub in ['accounts', 'transactions', 'corporateActions', 'book', 'snapshots',
+                     'series', 'imports', 'mcpAudit'];
+        allow write: if false;
+      }
+      // There is deliberately NO rule granting isAdmin() anything under /users.
+    }
+
+    // ---------- admin-visible, non-personal metadata ----------
+    match /userMeta/{uid} {
+      allow get: if isOwner(uid) || isAdmin();
+      allow list: if isAdmin();
+      allow write: if false;
+    }
+    match /metrics/{docId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /adminAudit/{docId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ---------- public reference data (no user data) ----------
+    match /instruments/{id} { allow read: if signedIn(); allow write: if false; }
+    match /prices/{id}      { allow read: if signedIn(); allow write: if false; }
+    match /fx/{id}          { allow read: if signedIn(); allow write: if false; }
+    match /fxHistory/{id}   { allow read: if signedIn(); allow write: if false; }
+
+    // oauthClients, oauthGrants, oauthTokens, rateLimits, health → default deny (server only)
+  }
+}

@@ -1,0 +1,49 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# env & secrets: never commit real values
+.env
+.env.*
+!apps/web/.env.development
+!.env.example
+*.pem
+service-account*.json
+
+# firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+database-debug.log
+pubsub-debug.log
+firebase/emulator-data/
+
+# real broker / CAS statements must never be committed
+packages/parsers/fixtures/_incoming/
+
+# tests
+coverage/
+playwright-report/
+test-results/
+
+# editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# local tool config (machine-specific paths)
+.claude/launch.json
+.claude/settings.local.json

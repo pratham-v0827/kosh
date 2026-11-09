@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+  - firebase
+
+# pnpm 12: dependencies allowed to run install scripts. Everything else is blocked by default.
+allowBuilds:
+  sharp: false # image optimisation; not needed on Vercel
+  unrs-resolver: false
+  protobufjs: false # postinstall only prints a version notice
+  '@firebase/util': false # postinstall only serves Firebase App Hosting auto-init
+  esbuild: true # vitest/vite need the platform binary check

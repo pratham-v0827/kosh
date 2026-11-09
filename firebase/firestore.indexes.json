@@ -1,0 +1,45 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "instrumentId", "order": "ASCENDING" },
+        { "fieldPath": "tradeDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "accountId", "order": "ASCENDING" },
+        { "fieldPath": "tradeDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "snapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "trigger", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "userMeta",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "lastActiveAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "instruments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assetClass", "order": "ASCENDING" },
+        { "fieldPath": "holders", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

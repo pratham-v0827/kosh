@@ -1,0 +1,11 @@
+rules_version = '2';
+
+// Kosh does not use Cloud Storage: uploaded files are parsed in memory and discarded (ADR-0008).
+// Deny everything so an accidentally created bucket is never readable or writable.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

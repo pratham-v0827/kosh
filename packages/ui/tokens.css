@@ -1,0 +1,93 @@
+/*
+ * Kosh design tokens, mapped onto shadcn/ui variable names so every shadcn component
+ * picks up the brand automatically. Keep in sync with tokens.json.
+ * Gain/loss colours must always be paired with a sign and an arrow (never colour alone).
+ */
+
+:root {
+  --radius: 0.625rem;
+
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
+  --accent: #eef2ff;
+  --accent-foreground: #3730a3;
+  --destructive: #b91c1c;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #4f46e5;
+
+  --brand-deep: #3730a3;
+  --gold: #f5b83d;
+  --gain: #15803d;
+  --loss: #b91c1c;
+  --warn: #b45309;
+
+  --chart-1: #4f46e5;
+  --chart-2: #0d9488;
+  --chart-3: #d97706;
+  --chart-4: #0284c7;
+  --chart-5: #e11d48;
+}
+
+/* Dark values: applied by OS preference unless the user forces light, or by an explicit .dark class. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: #0b1020;
+    --foreground: #f1f5f9;
+    --card: #111833;
+    --card-foreground: #f1f5f9;
+    --popover: #111833;
+    --popover-foreground: #f1f5f9;
+    --primary: #818cf8;
+    --primary-foreground: #0b1020;
+    --secondary: #18213f;
+    --secondary-foreground: #f1f5f9;
+    --muted: #18213f;
+    --muted-foreground: #94a3b8;
+    --accent: #1e2754;
+    --accent-foreground: #c7d2fe;
+    --destructive: #f87171;
+    --border: #25304f;
+    --input: #25304f;
+    --ring: #818cf8;
+    --brand-deep: #c7d2fe;
+    --gain: #4ade80;
+    --loss: #f87171;
+    --warn: #fbbf24;
+  }
+}
+
+.dark {
+  --background: #0b1020;
+  --foreground: #f1f5f9;
+  --card: #111833;
+  --card-foreground: #f1f5f9;
+  --popover: #111833;
+  --popover-foreground: #f1f5f9;
+  --primary: #818cf8;
+  --primary-foreground: #0b1020;
+  --secondary: #18213f;
+  --secondary-foreground: #f1f5f9;
+  --muted: #18213f;
+  --muted-foreground: #94a3b8;
+  --accent: #1e2754;
+  --accent-foreground: #c7d2fe;
+  --destructive: #f87171;
+  --border: #25304f;
+  --input: #25304f;
+  --ring: #818cf8;
+  --brand-deep: #c7d2fe;
+  --gain: #4ade80;
+  --loss: #f87171;
+  --warn: #fbbf24;
+}

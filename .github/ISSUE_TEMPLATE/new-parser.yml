@@ -1,0 +1,32 @@
+name: New / changed import format
+description: Ask for a broker, RTA or exchange export format to be supported (or report that one changed)
+labels: [parser]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never attach a real statement.** Redact names, PAN, email, phone, address, DP/client IDs,
+        folio and bank numbers, wallet addresses (see docs/PLAN.md §3). Keep headers, number and date formats.
+  - type: input
+    id: source
+    attributes:
+      label: Platform (e.g. Groww, INDmoney, CAMS)
+    validations:
+      required: true
+  - type: input
+    id: path
+    attributes:
+      label: Exact menu path used to export the file
+    validations:
+      required: true
+  - type: dropdown
+    id: type
+    attributes:
+      label: File type
+      options: [CSV, XLSX, PDF (password-protected), PDF, Other]
+  - type: textarea
+    id: sample
+    attributes:
+      label: Redacted sample (headers + 2–3 fake rows), or attach a redacted file
+    validations:
+      required: true
