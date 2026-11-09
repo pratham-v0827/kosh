@@ -1,5 +1,6 @@
 'use client';
 
+import { shownDirection } from '@kosh/core';
 import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { useFormat } from '@/components/providers/settings-provider';
 import { cn } from '@/lib/utils';
@@ -29,9 +30,11 @@ export function Change({
     return <span className={cn('text-muted-foreground', className)}>—</span>;
   }
   const n = Number(value);
-  const dir = n > 0 ? 'gain' : n < 0 ? 'loss' : 'flat';
-  const Icon = n > 0 ? ArrowUpRight : n < 0 ? ArrowDownRight : null;
   const money = f.money(n, { signed: true, compact });
+  // BUG-003: direction from the DISPLAYED amount, so "₹0.00" is never red with a down arrow.
+  const sign = shownDirection(n, money);
+  const dir = sign > 0 ? 'gain' : sign < 0 ? 'loss' : 'flat';
+  const Icon = sign > 0 ? ArrowUpRight : sign < 0 ? ArrowDownRight : null;
   const percent = pct === null || pct === undefined ? null : f.percent(pct, { signed: true });
   const label =
     dir === 'flat'

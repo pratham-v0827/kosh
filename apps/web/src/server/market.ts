@@ -174,16 +174,29 @@ export function quoteToPriceInfo(q: CachedQuote, assetClass: AssetClass, now: Da
 }
 
 export function manualToPriceInfo(
-  p: { price: string; asOf: string; prevPrice?: string },
+  p: { price: string; asOf: string; updatedAt?: { toDate?: () => Date } | Date | string },
   assetClass: AssetClass,
   currency: 'INR' | 'USD',
   now: Date,
-): PriceInfo {
+): PriceInfo & { updatedAt?: string } {
+  const u = p.updatedAt;
+  const updatedAt =
+    u instanceof Date
+      ? u
+      : typeof u === 'string'
+        ? new Date(u)
+        : typeof u?.toDate === 'function'
+          ? u.toDate()
+          : undefined;
   return {
     price: p.price,
     currency,
     asOf: p.asOf,
     source: 'manual',
     status: freshness(assetClass, 'manual', p.asOf, now),
+    // when the user entered it: decides same-day ties with provider quotes (pickPrice)
+    ...(updatedAt && !Number.isNaN(updatedAt.getTime())
+      ? { updatedAt: updatedAt.toISOString() }
+      : {}),
   };
 }

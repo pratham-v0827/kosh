@@ -5,6 +5,7 @@ import {
   type ComposedBook,
   type Currency,
   defaultCurrency,
+  pickPrice,
   type InstrumentMeta,
   type LedgerError,
   type LedgerTxn,
@@ -176,13 +177,6 @@ export interface BookLastRefresh {
   trigger: RefreshTrigger;
 }
 
-/** Pick the most recent of a provider quote and a manual price (provider wins ties). */
-function choosePrice(quote: PriceInfo | null, manual: PriceInfo | null): PriceInfo | null {
-  if (!quote) return manual;
-  if (!manual) return quote;
-  return manual.asOf.slice(0, 10) > quote.asOf.slice(0, 10) ? manual : quote;
-}
-
 export async function applyLedgerChange(
   uid: string,
   change: LedgerChange,
@@ -260,15 +254,20 @@ export async function applyLedgerChange(
     if (errors.length > 0)
       throw new HttpError(422, 'LEDGER_INVALID', describe(errors[0]!), { errors });
 
-    const manual: Record<string, { price: string; asOf: string }> = {};
+    const manual: Record<
+      string,
+      { price: string; asOf: string; updatedAt?: Date | { toDate?: () => Date } }
+    > = {};
     for (const d of priceSnap.docs) manual[d.id] = d.data() as { price: string; asOf: string };
-    Object.assign(manual, change.manualPrices ?? {});
+    // prices set in THIS change were entered now
+    for (const [id, p] of Object.entries(change.manualPrices ?? {}))
+      manual[id] = { ...p, updatedAt: now };
 
     const prices: Record<string, PriceInfo> = {};
     for (const inst of Object.values(instruments)) {
       const q = market.quotes.get(inst.id);
       const m = manual[inst.id];
-      const chosen = choosePrice(
+      const chosen = pickPrice(
         q ? quoteToPriceInfo(q, inst.assetClass, now) : null,
         m ? manualToPriceInfo(m, inst.assetClass, inst.currency ?? 'INR', now) : null,
       );
