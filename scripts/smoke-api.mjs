@@ -380,5 +380,77 @@ check(
   JSON.stringify(c2b.users),
 );
 
+// =================== Phase 2 audit regressions (docs/audits/phase2-bugs.md) ===================
+console.log('\n— audit regressions —');
+const dave = await emulatorUser();
+await call(dave.token, 'POST', '/api/v1/session');
+const tomorrowIst = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(
+  new Date(Date.now() + 86_400_000),
+);
+const buy = (over) =>
+  call(dave.token, 'POST', '/api/v1/holdings/manual', {
+    instrument: { name: 'Berkshire Hathaway B', assetClass: 'US_EQUITY', symbol: 'BRK.B' },
+    qty: '2',
+    price: '400',
+    tradeDate: '2025-03-14',
+    ...over,
+  });
+const future = await buy({ tradeDate: tomorrowIst });
+check(
+  'BUG-002: trade date tomorrow (IST) → 422',
+  future.status === 422,
+  JSON.stringify(future.body),
+);
+const huge = await buy({ qty: '1000000000000.5' });
+const tooPrecise = await buy({ price: '400.00000000001' });
+check(
+  'BUG-006: absurd quantity / 11 decimal places → 422',
+  huge.status === 422 && tooPrecise.status === 422,
+  JSON.stringify([huge.status, tooPrecise.status]),
+);
+const brk = await buy({});
+check(
+  'ticker with a dot (BRK.B) → 201, own instrument id',
+  brk.status === 201 && brk.body?.instrumentId === 'US_EQUITY:BRK.B',
+  JSON.stringify(brk.body),
+);
+
+// BUG-008 candidate: two refreshes at the same moment must not both pass the cooldown.
+const race = await Promise.all([
+  call(dave.token, 'POST', '/api/v1/refresh'),
+  call(dave.token, 'POST', '/api/v1/refresh'),
+]);
+const statuses = race.map((r) => r.status).sort();
+check(
+  'concurrent refreshes → exactly one 200 and one 429',
+  statuses[0] === 200 && statuses[1] === 429,
+  JSON.stringify(race.map((r) => [r.status, r.body?.error?.code])),
+);
+const dbook = await readDoc(`users/${dave.uid}/book/current`);
+const brkKey = 'manual|US_EQUITY:BRK.B';
+check(
+  'BRK.B priced and valued in the book (dot inside a map key)',
+  Number(str(field(dbook, 'holdings', brkKey, 'value'))) > 0 &&
+    str(field(dbook, 'holdings', brkKey, 'price', 'source')) === 'yahoo-unofficial',
+  JSON.stringify(field(dbook, 'holdings', brkKey))?.slice(0, 300),
+);
+
+// BUG-005: a manual price entered on the same day as the provider quote must win.
+const quoteDay = str(field(await readDoc('prices/US_EQUITY:BRK.B'), 'asOf'))?.slice(0, 10);
+const setPrice = await call(
+  dave.token,
+  'PUT',
+  `/api/v1/instruments/${encodeURIComponent('US_EQUITY:BRK.B')}/price`,
+  { price: '123.45', asOf: quoteDay },
+);
+const dbook2 = await readDoc(`users/${dave.uid}/book/current`);
+check(
+  'BUG-005: same-day manual price overrides the earlier provider quote',
+  setPrice.status === 200 &&
+    str(field(dbook2, 'holdings', brkKey, 'price', 'source')) === 'manual' &&
+    str(field(dbook2, 'holdings', brkKey, 'price', 'price')) === '123.45',
+  JSON.stringify({ setPrice, price: field(dbook2, 'holdings', brkKey, 'price') })?.slice(0, 300),
+);
+
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll API smoke checks passed');
 process.exit(failures ? 1 : 0);
