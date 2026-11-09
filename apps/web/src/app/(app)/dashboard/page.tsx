@@ -112,8 +112,8 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Values in ₹. Mutual funds and crypto update automatically; other holdings use the price
-            you set.
+            Values in ₹. Prices update automatically from free sources; unlisted shares use the
+            price you set.
             {data.fx && (
               <>
                 {' '}
