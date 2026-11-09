@@ -8,8 +8,26 @@ import { getFirestore } from 'firebase-admin/firestore';
  * so every server module must enforce its own access boundaries (see docs/PLAN.md §4.1).
  */
 
-export const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? 'demo-kosh';
-export const usingEmulators = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
+/** Your Firebase project id (bring-your-own-Firebase). No default. */
+export const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? '';
+export const usingEmulators = Boolean(
+  process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST,
+);
+
+/**
+ * With FIREBASE_AUTH_EMULATOR_HOST set, the Admin SDK accepts UNSIGNED emulator tokens. That must
+ * never happen on a real deployment, so emulator mode is refused on Vercel production.
+ */
+export function assertEmulatorModeAllowed(env = process.env) {
+  if (
+    (env.FIRESTORE_EMULATOR_HOST || env.FIREBASE_AUTH_EMULATOR_HOST) &&
+    env.VERCEL_ENV === 'production'
+  ) {
+    throw new Error(
+      'Emulator variables are set on a production deployment. Remove FIRESTORE_EMULATOR_HOST / FIREBASE_AUTH_EMULATOR_HOST.',
+    );
+  }
+}
 
 function createApp(): App {
   const existing = getApps()[0];
@@ -17,7 +35,14 @@ function createApp(): App {
 
   // Emulators need no credentials; the Admin SDK reads FIRESTORE_EMULATOR_HOST and
   // FIREBASE_AUTH_EMULATOR_HOST from the environment.
-  if (usingEmulators) return initializeApp({ projectId });
+  if (usingEmulators) {
+    assertEmulatorModeAllowed();
+    if (!projectId)
+      throw new Error(
+        'NEXT_PUBLIC_FIREBASE_PROJECT_ID is required (see apps/web/.env.development).',
+      );
+    return initializeApp({ projectId });
+  }
 
   const encoded = process.env.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64;
   if (!encoded) {
