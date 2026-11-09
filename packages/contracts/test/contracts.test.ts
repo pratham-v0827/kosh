@@ -146,3 +146,34 @@ import { InstrumentInput } from '../src';
 function ManualHoldingInputInstrument(v: unknown) {
   return InstrumentInput.safeParse(v).success;
 }
+
+// Phase 2 bug audit regressions (docs/audits/phase2-bugs.md)
+import { afterEach, vi } from 'vitest';
+import { IsoDate, PositiveDecimalString, DecimalString } from '../src';
+
+describe('BUG-002: a trade date one day in the future (IST) was accepted', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('rejects tomorrow (IST) in the Indian morning', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-09T05:00:00Z') }); // 10:30 IST, 9 Nov
+    expect(IsoDate.safeParse('2026-11-09').success).toBe(true);
+    expect(IsoDate.safeParse('2026-11-10').success).toBe(false);
+  });
+
+  it('accepts IST "today" late in the UTC evening', () => {
+    vi.useFakeTimers({ now: new Date('2026-11-09T20:00:00Z') }); // 01:30 IST, 10 Nov
+    expect(IsoDate.safeParse('2026-11-10').success).toBe(true);
+    expect(IsoDate.safeParse('2026-11-11').success).toBe(false);
+  });
+});
+
+describe('BUG-006: no upper bound or decimal-place limit on amounts', () => {
+  it('rejects absurd magnitudes and excessive decimals, keeps realistic values', () => {
+    expect(PositiveDecimalString.safeParse('1000000000000').success).toBe(true); // 1e12
+    expect(PositiveDecimalString.safeParse('1000000000000.01').success).toBe(false);
+    expect(DecimalString.safeParse('99999999999999999999999999999').success).toBe(false);
+    expect(PositiveDecimalString.safeParse('0.0000000001').success).toBe(true); // 10 dp
+    expect(PositiveDecimalString.safeParse('0.00000000001').success).toBe(false); // 11 dp
+    expect(PositiveDecimalString.safeParse('0.00012345').success).toBe(true); // satoshis
+  });
+});

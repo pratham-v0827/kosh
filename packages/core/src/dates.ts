@@ -26,3 +26,8 @@ export function toEpochDay(input: DateInput): number {
 export function daysBetween(a: DateInput, b: DateInput): number {
   return toEpochDay(b) - toEpochDay(a);
 }
+
+/** The calendar date in India (Asia/Kolkata, UTC+05:30, no DST) as YYYY-MM-DD. */
+export function indiaDate(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+}

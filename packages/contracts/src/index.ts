@@ -1,21 +1,39 @@
-import { ASSET_CLASSES, toEpochDay } from '@kosh/core';
+import { ASSET_CLASSES, indiaDate, toEpochDay } from '@kosh/core';
 import { z } from 'zod';
 
 // ---------- primitives ----------
+
+/** Largest amount, price or quantity accepted (₹1 lakh crore); guards against typos and overflow. */
+export const MAX_DECIMAL = 1e12;
+/** Most decimal places accepted (crypto needs 8; FX rates and NAVs fewer). */
+export const MAX_DECIMAL_PLACES = 10;
 
 /** Non-negative decimal as a string, e.g. "2410.50". Strings avoid float rounding on the wire. */
 export const DecimalString = z
   .string()
   .trim()
   .max(30)
-  .regex(/^\d+(\.\d+)?$/, 'Enter a number like 2410.50');
+  .superRefine((v, ctx) => {
+    // BUG-006: there was no upper bound or decimal-place limit.
+    const m = /^(\d+)(?:\.(\d+))?$/.exec(v);
+    if (!m) {
+      ctx.addIssue({ code: 'custom', message: 'Enter a number like 2410.50' });
+      return;
+    }
+    if ((m[2]?.length ?? 0) > MAX_DECIMAL_PLACES) {
+      ctx.addIssue({ code: 'custom', message: `Use at most ${MAX_DECIMAL_PLACES} decimal places` });
+      return;
+    }
+    if (Number(v) > MAX_DECIMAL)
+      ctx.addIssue({ code: 'custom', message: 'That number is too large' });
+  });
 
 export const PositiveDecimalString = DecimalString.refine(
   (v) => Number(v) > 0,
   'Must be more than 0',
 );
 
-/** Calendar date YYYY-MM-DD, valid, not in the future (one day of slack for time zones). */
+/** Calendar date YYYY-MM-DD, valid, and not after today in India (Kosh's reference time zone). */
 export const IsoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
@@ -27,7 +45,8 @@ export const IsoDate = z
       ctx.addIssue({ code: 'custom', message: 'Not a real date' });
       return;
     }
-    if (day > toEpochDay(new Date()) + 1) {
+    // BUG-002: this compared with UTC today + 1 day, which let tomorrow (IST) through.
+    if (day > toEpochDay(indiaDate())) {
       ctx.addIssue({ code: 'custom', message: 'Date cannot be in the future' });
     }
   });
