@@ -48,9 +48,9 @@ describe('formatPercent', () => {
 });
 
 describe('formatQuantity', () => {
-  it('keeps up to 4 decimals and groups per style', () => {
+  it('keeps up to 8 decimals and groups per style', () => {
     expect(formatQuantity('123456.125')).toBe('1,23,456.125');
     expect(formatQuantity('123456.125', 'international')).toBe('123,456.125');
-    expect(formatQuantity('0.00012345')).toBe('0.0001');
+    expect(formatQuantity('0.000123456')).toBe('0.00012346'); // was 4 dp: BUG-004
   });
 });

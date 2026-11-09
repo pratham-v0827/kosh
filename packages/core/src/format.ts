@@ -30,10 +30,30 @@ function toNumber(value: number | string): number {
   return n;
 }
 
+/** True when the formatted body shows zero (e.g. "₹0.00" for −0.004): then no sign is shown. */
+const showsZero = (body: string) => Number(body.replace(/[^0-9.]/g, '')) === 0;
+
 function withSign(n: number, body: string, signed: boolean) {
+  if (showsZero(body)) return body; // BUG-003: never "−₹0.00"
   if (n < 0) return `${MINUS}${body}`;
   if (signed && n > 0) return `+${body}`;
   return body;
+}
+
+/** −1 / 0 / 1 after rounding to `decimals` — use for gain/loss arrows and colours. */
+export function moneyDirection(value: number | string, decimals = 2): -1 | 0 | 1 {
+  const r = Math.round(toNumber(value) * 10 ** decimals);
+  return r > 0 ? 1 : r < 0 ? -1 : 0;
+}
+
+/**
+ * −1 / 0 / 1 for a value as it is DISPLAYED: 0 when the formatted text shows only zeros
+ * (e.g. "₹0" in compact mode for −0.4), so the arrow and colour always match the digits.
+ */
+export function shownDirection(value: number | string, formatted: string): -1 | 0 | 1 {
+  if (showsZero(formatted)) return 0;
+  const n = toNumber(value);
+  return n > 0 ? 1 : n < 0 ? -1 : 0;
 }
 
 export function formatMoney(value: number | string, options: MoneyOptions = {}): string {
@@ -91,8 +111,8 @@ export function formatPercent(
   return withSign(Number((n * 100).toFixed(decimals)), body, signed);
 }
 
-/** Quantities: up to 4 decimals, trailing zeros dropped, grouped per style. */
+/** Quantities: up to 8 decimals (satoshis), trailing zeros dropped, grouped per style. */
 export function formatQuantity(value: number | string, style: NumberStyle = 'indian'): string {
   const n = toNumber(value);
-  return new Intl.NumberFormat(localeFor(style), { maximumFractionDigits: 4 }).format(n);
+  return new Intl.NumberFormat(localeFor(style), { maximumFractionDigits: 8 }).format(n);
 }

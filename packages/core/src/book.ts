@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal';
 import { daysBetween } from './dates';
 import {
   type AssetClass,
@@ -109,6 +109,30 @@ export interface ComposedBook {
 
 /** XIRR over very short holding periods is noise; the UI explains why it is hidden. */
 export const MIN_XIRR_DAYS = 30;
+
+/**
+ * Choose between a provider quote and the user's manual price (BUG-005).
+ * The later price date wins. On the same date, the one entered more recently wins
+ * (manual `updatedAt` vs the quote's instant), so a manual override made today is respected.
+ */
+export function pickPrice(
+  quote: PriceInfo | null,
+  manual: (PriceInfo & { updatedAt?: string }) | null,
+): PriceInfo | null {
+  if (!quote) return manual ? stripUpdatedAt(manual) : null;
+  if (!manual) return quote;
+  const q = quote.asOf.slice(0, 10);
+  const m = manual.asOf.slice(0, 10);
+  if (m !== q) return m > q ? stripUpdatedAt(manual) : quote;
+  if (!manual.updatedAt) return quote;
+  return Date.parse(manual.updatedAt) > Date.parse(quote.asOf) ? stripUpdatedAt(manual) : quote;
+}
+
+function stripUpdatedAt(p: PriceInfo & { updatedAt?: string }): PriceInfo {
+  const { updatedAt: _u, ...rest } = p;
+  void _u;
+  return rest;
+}
 
 const ZERO = new Decimal(0);
 

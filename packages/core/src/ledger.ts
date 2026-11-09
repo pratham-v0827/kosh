@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import Decimal from './decimal';
 import { toEpochDay } from './dates';
 import { type CashFlow, xirr } from './xirr';
 
@@ -452,10 +452,15 @@ export function dayChange(
   let base = ZERO;
   for (const l of position.lots) {
     const q = new Decimal(l.qty);
-    const fresh = l.date >= quoteDate;
-    const b = fresh ? q.times(l.unitCostCcy).times(l.fx) : q.times(P0).times(X0);
+    const now = q.times(P).times(X);
+    if (l.date > quoteDate) {
+      // BUG-009: bought after the latest quote → no price movement observed since the purchase.
+      base = base.plus(now);
+      continue;
+    }
+    const b = l.date === quoteDate ? q.times(l.unitCostCcy).times(l.fx) : q.times(P0).times(X0);
     base = base.plus(b);
-    change = change.plus(q.times(P).times(X).minus(b));
+    change = change.plus(now.minus(b));
   }
   return {
     change: change.toDecimalPlaces(2).toString(),
