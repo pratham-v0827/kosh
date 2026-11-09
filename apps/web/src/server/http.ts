@@ -1,5 +1,6 @@
 import 'server-only';
 import { type ApiError, fieldErrors } from '@kosh/contracts';
+import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
 export class HttpError extends Error {
@@ -48,6 +49,8 @@ export function route<A extends unknown[]>(fn: (...args: A) => Promise<Response>
     try {
       return await fn(...args);
     } catch (e) {
+      // BUG-010: let Next.js control flow (notFound, redirect, prerender bail-out) through.
+      unstable_rethrow(e);
       if (e instanceof HttpError) return errorResponse(e.status, e.code, e.message, e.details);
       const requestId = crypto.randomUUID();
       console.error(`[${requestId}]`, e);
