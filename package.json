@@ -21,7 +21,10 @@
     "format:check": "prettier --check .",
     "smoke": "node scripts/smoke-api.mjs",
     "seed": "node scripts/seed-demo.mjs",
-    "cron": "node scripts/run-cron.mjs"
+    "cron": "node scripts/run-cron.mjs",
+    "check-env": "node scripts/check-env.mjs",
+    "admin:grant": "pnpm --filter @kosh/web exec node scripts/grant-admin.mjs",
+    "firebase:deploy-rules": "firebase deploy --only firestore:rules,firestore:indexes"
   },
   "devDependencies": {
     "concurrently": "^10.0.7",

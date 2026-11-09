@@ -47,3 +47,6 @@ Thumbs.db
 # local tool config (machine-specific paths)
 .claude/launch.json
 .claude/settings.local.json
+
+# your own Firebase project alias (copy .firebaserc.example); emulators use --project demo-kosh
+.firebaserc
