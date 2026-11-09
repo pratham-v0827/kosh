@@ -1,5 +1,6 @@
-import { getApp, getApps, initializeApp } from 'firebase/app';
+import { type FirebaseApp, getApp, getApps, initializeApp } from 'firebase/app';
 import { type Auth, connectAuthEmulator, getAuth } from 'firebase/auth';
+import { connectFirestoreEmulator, type Firestore, getFirestore } from 'firebase/firestore';
 
 /** Firebase web config. These values are public by design; restrict the API key by HTTP referrer. */
 const config = {
@@ -10,17 +11,30 @@ const config = {
 
 const useEmulators = process.env.NEXT_PUBLIC_USE_EMULATORS === 'true';
 let auth: Auth | undefined;
+let db: Firestore | undefined;
+
+function app(): FirebaseApp {
+  return getApps().length ? getApp() : initializeApp(config);
+}
+
+/** Page hostname: "localhost" and "127.0.0.1" are different sites; storage partitioning would
+ * otherwise break redirect sign-in against the Auth emulator. */
+const emulatorHost = () => (typeof window === 'undefined' ? '127.0.0.1' : window.location.hostname);
 
 /** Browser-side Auth instance, wired to the Auth emulator in local development. */
 export function clientAuth(): Auth {
   if (auth) return auth;
-  const app = getApps().length ? getApp() : initializeApp(config);
-  auth = getAuth(app);
+  auth = getAuth(app());
   if (useEmulators) {
-    // Use the page's own hostname: "localhost" and "127.0.0.1" are different sites, and the
-    // browser's storage partitioning would otherwise break redirect sign-in.
-    const host = typeof window === 'undefined' ? '127.0.0.1' : window.location.hostname;
-    connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
+    connectAuthEmulator(auth, `http://${emulatorHost()}:9099`, { disableWarnings: true });
   }
   return auth;
+}
+
+/** Browser-side Firestore (read-only use: all writes go through the API, except settings). */
+export function clientDb(): Firestore {
+  if (db) return db;
+  db = getFirestore(app());
+  if (useEmulators) connectFirestoreEmulator(db, emulatorHost(), 8080);
+  return db;
 }

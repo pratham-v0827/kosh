@@ -47,7 +47,7 @@ service cloud.firestore {
       match /{sub}/{docId} {
         allow read: if isOwner(uid) && notBlocked()
           && sub in ['accounts', 'transactions', 'corporateActions', 'book', 'snapshots',
-                     'series', 'imports', 'mcpAudit'];
+                     'series', 'imports', 'mcpAudit', 'instruments', 'manualPrices'];
         allow write: if false;
       }
       // There is deliberately NO rule granting isAdmin() anything under /users.

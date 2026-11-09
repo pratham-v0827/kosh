@@ -10,7 +10,7 @@
   can ask Claude about your own portfolio.
 </p>
 
-> **Status: pre-alpha (Milestone 0: foundation).** Nothing here tracks real money yet.
+> **Status: pre-alpha (Milestone 1).** Sign-in, manual and unlisted holdings with FIFO cost, P&L and XIRR work locally. Live prices and imports come next.
 > See the [roadmap](docs/PLAN.md#12-roadmap--milestones).
 
 > **Disclaimer:** Kosh is **not investment advice** and is **not affiliated with** Zerodha, Groww,
@@ -38,7 +38,7 @@
 | INDmoney        | Holding statement / US account statement                 | Planned (M3)    |
 | Mutual funds    | CAMS/KFintech detailed CAS PDF                           | Planned (M3)    |
 | CoinDCX         | Trade history export                                     | Planned (M3)    |
-| Unlisted shares | Manual entry                                             | Planned (M1)    |
+| Unlisted shares | Manual entry                                             | Available (M1)  |
 
 Parsers are built from real, redacted sample files only. See [docs/PLAN.md §3](docs/PLAN.md#3-files-i-need-from-you).
 
@@ -63,22 +63,24 @@ The emulator UI is at http://127.0.0.1:4000.
 
 ## Scripts
 
-| Command                             | What it does                                        |
-| ----------------------------------- | --------------------------------------------------- |
-| `pnpm dev:all`                      | Emulators + web app                                 |
-| `pnpm dev`                          | Web app only (expects emulators running)            |
-| `pnpm emulators`                    | Auth + Firestore emulators only                     |
-| `pnpm build`                        | Production build of every package                   |
-| `pnpm lint` / `pnpm typecheck`      | Static checks                                       |
-| `pnpm test`                         | Unit tests (portfolio maths)                        |
-| `pnpm test:rules`                   | Firestore security-rules tests against the emulator |
-| `pnpm format` / `pnpm format:check` | Prettier                                            |
+| Command                             | What it does                                                               |
+| ----------------------------------- | -------------------------------------------------------------------------- |
+| `pnpm dev:all`                      | Emulators + web app                                                        |
+| `pnpm dev`                          | Web app only (expects emulators running)                                   |
+| `pnpm emulators`                    | Auth + Firestore emulators only                                            |
+| `pnpm build`                        | Production build of every package                                          |
+| `pnpm lint` / `pnpm typecheck`      | Static checks                                                              |
+| `pnpm test`                         | Unit tests (portfolio maths)                                               |
+| `pnpm test:rules`                   | Firestore security-rules tests against the emulator                        |
+| `pnpm smoke`                        | End-to-end API checks (needs `pnpm dev:all` running; local emulators only) |
+| `pnpm format` / `pnpm format:check` | Prettier                                                                   |
 
 ## Repository layout
 
 ```text
 apps/web          Next.js app (UI, API routes, admin, MCP endpoint later)
-packages/core     Domain model and portfolio maths (pure, fully tested)
+packages/core     Domain model and portfolio maths: FIFO ledger, XIRR, formatting (pure, fully tested)
+packages/contracts API request schemas (Zod), shared by server and forms
 packages/ui       Design tokens shared with the future Android app
 firebase/         Firestore & Storage rules + rules tests
 brand/            Logo and brand sheet

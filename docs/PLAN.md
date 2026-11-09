@@ -742,7 +742,7 @@ Property-based tests (fast-check):
 | `--loss` | `#B91C1C` | `#F87171` | − values, always with ▼ and "−" |
 | `--warn` | `#B45309` | `#FBBF24` | Stale data |
 | `--danger` | `#B91C1C` | `#F87171` | Destructive actions |
-| chart series | indigo, teal `#0D9488`, amber `#D97706`, sky `#0284C7`, rose `#E11D48`, slate | lightened equivalents | Asset classes (fixed mapping), validated for CVD |
+| chart series | indigo, teal `#0D9488`, amber `#D97706`, sky `#0284C7`, violet `#7C3AED` (no reds or greens, so asset colours never read as loss or gain), slate | lightened equivalents | Asset classes (fixed mapping), validated for CVD |
 
 - **Typography:** Inter (variable). `font-variant-numeric: tabular-nums` for all figures. Scale (px / line-height): 12/16, 14/20, 16/24, 18/28, 20/28, 24/32, 30/36, 36/40, 48/52 (hero net worth).
 - **Spacing:** 4-px grid (`1`=4 … `16`=64).

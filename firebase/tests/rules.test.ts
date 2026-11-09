@@ -46,6 +46,57 @@ beforeEach(async () => {
     await db.doc('userMeta/bob').set({ status: 'active', refreshCount: 1 });
     await db.doc('instruments/INE002A01018').set({ name: 'Reliance Industries' });
     await db.doc('adminAudit/a1').set({ action: 'block' });
+    await db
+      .doc('users/alice/instruments/UNLISTED:acme')
+      .set({ name: 'Acme', assetClass: 'UNLISTED' });
+    await db
+      .doc('users/alice/manualPrices/UNLISTED:acme')
+      .set({ price: '310', asOf: '2026-11-09' });
+  });
+});
+
+describe('per-user instruments and manual prices (M1)', () => {
+  it('owner can read their own instruments and manual prices', async () => {
+    await assertSucceeds(alice().collection('users/alice/instruments').get());
+    await assertSucceeds(alice().doc('users/alice/manualPrices/UNLISTED:acme').get());
+  });
+
+  it('other users and admins cannot read them, and nobody can write them from a client', async () => {
+    await assertFails(bob().collection('users/alice/instruments').get());
+    await assertFails(admin().doc('users/alice/manualPrices/UNLISTED:acme').get());
+    await assertFails(alice().doc('users/alice/manualPrices/UNLISTED:acme').set({ price: '1' }));
+    await assertFails(alice().doc('users/alice/instruments/X').set({ name: 'x' }));
+  });
+
+  it('owner can set an email weekday but not a server-managed nextDueAt', async () => {
+    const ts = (await import('firebase/compat/app')).default.firestore.FieldValue.serverTimestamp();
+    await assertSucceeds(
+      alice()
+        .doc('users/alice')
+        .update({
+          settings: { ...settings, email: { enabled: true, frequency: 'weekly', weekday: 3 } },
+          updatedAt: ts,
+        }),
+    );
+    await assertFails(
+      alice()
+        .doc('users/alice')
+        .update({
+          settings: {
+            ...settings,
+            email: { enabled: true, frequency: 'weekly', nextDueAt: new Date() },
+          },
+          updatedAt: ts,
+        }),
+    );
+    await assertFails(
+      alice()
+        .doc('users/alice')
+        .update({
+          settings: { ...settings, email: { enabled: true, frequency: 'daily' } },
+          updatedAt: ts,
+        }),
+    );
   });
 });
 

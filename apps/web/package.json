@@ -10,6 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@kosh/contracts": "workspace:*",
     "@kosh/core": "workspace:*",
     "@kosh/ui": "workspace:*",
     "class-variance-authority": "^0.7.1",
@@ -18,10 +19,13 @@
     "firebase-admin": "14.5.0",
     "lucide-react": "^1.70.0",
     "next": "16.4.5",
+    "next-themes": "^0.4.6",
     "radix-ui": "^1.8.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "sonner": "^2.0.8",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

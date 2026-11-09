@@ -18,7 +18,8 @@
     "test": "turbo run test",
     "test:rules": "firebase emulators:exec --only firestore --project demo-kosh \"pnpm --filter @kosh/firebase test:emulator\"",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "smoke": "node scripts/smoke-api.mjs"
   },
   "devDependencies": {
     "concurrently": "^10.0.7",
