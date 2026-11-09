@@ -35,6 +35,7 @@ export const POST = route(async (req: Request) => {
         assetClass: input.instrument.assetClass,
         symbol: input.instrument.symbol ?? null,
         currency: defaultCurrency(input.instrument.assetClass),
+        ...(input.instrument.exchange ? { exchange: input.instrument.exchange } : {}),
       },
     ],
     add: [

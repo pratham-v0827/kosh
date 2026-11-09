@@ -24,6 +24,8 @@ export interface InstrumentMeta {
   symbol: string | null;
   /** Quote currency. Default: USD for US equities, INR otherwise. */
   currency?: Currency;
+  /** Indian stocks: listing exchange (default NSE). */
+  exchange?: 'NSE' | 'BSE';
 }
 
 export type PriceStatus = 'fresh' | 'stale';

@@ -88,15 +88,32 @@ const holdings = [
     tradeDate: '2025-03-14',
     currentPrice: '228.10',
   },
-  // Indian stock: manual price (deliberately old below, to show a stale badge)
+  // Indian stocks: NSE → Yahoo (unofficial); BSE → Alpha Vantage (free key) → Yahoo
   {
-    instrument: { name: 'Reliance Industries', assetClass: 'IN_EQUITY', symbol: 'INE002A01018' },
+    instrument: {
+      name: 'Reliance Industries',
+      assetClass: 'IN_EQUITY',
+      symbol: 'RELIANCE',
+      exchange: 'NSE',
+    },
     qty: '20',
-    price: '2410',
+    price: '1205',
     fees: '35',
     tradeDate: '2024-08-19',
   },
-  // Unlisted share: manual indicative price
+  {
+    instrument: {
+      name: 'Tata Consultancy Services',
+      assetClass: 'IN_EQUITY',
+      symbol: 'TCS',
+      exchange: 'BSE',
+    },
+    qty: '5',
+    price: '3890',
+    fees: '20',
+    tradeDate: '2025-01-06',
+  },
+  // Unlisted share: manual indicative price (made 45 days old below → stale badge)
   {
     instrument: { name: 'Acme Technologies (pre-IPO)', assetClass: 'UNLISTED' },
     qty: '100',
@@ -117,13 +134,13 @@ for (const h of holdings) {
 // A partial sale with realised gain, and a manual price that is 45 days old (stale).
 await call('POST', '/api/v1/transactions', {
   type: 'SELL',
-  instrumentId: ids[4],
+  instrumentId: ids[5],
   tradeDate: daysAgo(20),
   qty: '30',
   price: '300',
 });
-await call('PUT', `/api/v1/instruments/${encodeURIComponent(ids[3])}/price`, {
-  price: '2885',
+await call('PUT', `/api/v1/instruments/${encodeURIComponent(ids[5])}/price`, {
+  price: '310',
   asOf: daysAgo(45),
 });
 

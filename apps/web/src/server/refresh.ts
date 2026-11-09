@@ -35,6 +35,7 @@ async function userTargets(uid: string): Promise<PriceTarget[]> {
       instrumentId: d.id,
       assetClass: d.get('assetClass') as AssetClass,
       symbol: d.get('symbol') as string,
+      ...(d.get('exchange') ? { exchange: d.get('exchange') as 'NSE' | 'BSE' } : {}),
     }));
 }
 
@@ -92,6 +93,7 @@ export async function refreshTrackedInstruments() {
     instrumentId: d.id,
     assetClass: d.get('assetClass') as AssetClass,
     symbol: d.get('symbol') as string,
+    ...(d.get('exchange') ? { exchange: d.get('exchange') as 'NSE' | 'BSE' } : {}),
   }));
   const r = await refreshQuotes({
     targets,

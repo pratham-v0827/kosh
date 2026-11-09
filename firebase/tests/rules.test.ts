@@ -94,6 +94,20 @@ describe('snapshots, series and shared market data (M2)', () => {
   });
 });
 
+describe('shared provider budgets (M2.1)', () => {
+  it('no client (user or admin) can read or tamper with the Alpha Vantage daily budget', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx
+        .firestore()
+        .doc('providerBudgets/alphavantage_2026-11-09')
+        .set({ used: 3, limit: 25 });
+    });
+    await assertFails(alice().doc('providerBudgets/alphavantage_2026-11-09').get());
+    await assertFails(alice().doc('providerBudgets/alphavantage_2026-11-09').set({ used: 0 }));
+    await assertFails(admin().doc('providerBudgets/alphavantage_2026-11-09').get());
+  });
+});
+
 describe('per-user instruments and manual prices (M1)', () => {
   it('owner can read their own instruments and manual prices', async () => {
     await assertSucceeds(alice().collection('users/alice/instruments').get());

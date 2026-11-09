@@ -19,18 +19,18 @@ import {
 import { api, ApiRequestError } from '@/lib/api';
 
 const SYMBOL_HINT: Record<AssetClass, string> = {
-  IN_EQUITY: 'ISIN (e.g. INE002A01018) or NSE symbol.',
+  IN_EQUITY: 'Exchange ticker, e.g. RELIANCE or M&M (not the ISIN). Needed for automatic prices.',
   US_EQUITY: 'Ticker, e.g. AAPL.',
   MUTUAL_FUND: 'AMFI scheme code (e.g. 120590) or ISIN. Needed for automatic daily NAV.',
-  UNLISTED: 'Optional. ISIN if the company has one.',
+  UNLISTED: 'Optional. Company code or ISIN if it has one.',
   CRYPTO: 'Coin symbol, e.g. BTC. Priced from the CoinDCX INR market.',
 };
 
 const PRICE_HINT: Record<AssetClass, string> = {
   IN_EQUITY:
-    'Indian share prices are manual for now: there is no permitted free automatic source yet. Enter today’s price and update it when you like.',
+    'Optional. With a ticker, Kosh prices NSE stocks from Yahoo Finance (unofficial) and BSE stocks from Alpha Vantage, then Yahoo.',
   US_EQUITY:
-    'Priced automatically when the instance has a free Finnhub or Twelve Data key; otherwise enter it here (in $).',
+    'Optional. Priced automatically (free Finnhub / Twelve Data key if set, otherwise Yahoo Finance, unofficial). In $.',
   MUTUAL_FUND: 'Optional. With a scheme code, Kosh uses the official AMFI NAV on every refresh.',
   UNLISTED:
     'Kosh can’t fetch unlisted prices. Enter the latest indicative price you trust; you can update it anytime.',
@@ -40,6 +40,7 @@ const PRICE_HINT: Record<AssetClass, string> = {
 export default function NewManualHoldingPage() {
   const router = useRouter();
   const [assetClass, setAssetClass] = useState<AssetClass>('UNLISTED');
+  const [exchange, setExchange] = useState<'NSE' | 'BSE'>('NSE');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
@@ -48,7 +49,12 @@ export default function NewManualHoldingPage() {
     const f = new FormData(e.currentTarget);
     const s = (k: string) => (f.get(k) as string | null)?.trim() || undefined;
     const candidate = {
-      instrument: { name: s('name') ?? '', assetClass, symbol: s('symbol') },
+      instrument: {
+        name: s('name') ?? '',
+        assetClass,
+        symbol: s('symbol'),
+        ...(assetClass === 'IN_EQUITY' ? { exchange } : {}),
+      },
       qty: s('qty') ?? '',
       price: s('price') ?? '',
       fees: s('fees'),
@@ -130,12 +136,28 @@ export default function NewManualHoldingPage() {
             </Field>
             <Field
               id="symbol"
-              label="Symbol / ISIN"
+              label={assetClass === 'IN_EQUITY' ? 'Ticker' : 'Symbol / code'}
               hint={SYMBOL_HINT[assetClass]}
               error={errors['instrument.symbol']}
             >
-              <Input name="symbol" autoComplete="off" maxLength={32} className="uppercase" />
+              <Input name="symbol" autoComplete="off" maxLength={20} className="uppercase" />
             </Field>
+            {assetClass === 'IN_EQUITY' && (
+              <div className="space-y-1.5">
+                <label htmlFor="exchange" className="text-sm font-medium">
+                  Exchange
+                </label>
+                <Select value={exchange} onValueChange={(v) => setExchange(v as 'NSE' | 'BSE')}>
+                  <SelectTrigger id="exchange" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NSE">NSE</SelectItem>
+                    <SelectItem value="BSE">BSE</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </CardContent>
 
           <CardHeader className="pt-2">

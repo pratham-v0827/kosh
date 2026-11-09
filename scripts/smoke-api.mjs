@@ -231,6 +231,53 @@ check(
   JSON.stringify(aaplTxn?.fields)?.slice(0, 200),
 );
 
+// M2.1: Indian stocks by exchange ticker. NSE → Yahoo (unofficial); BSE → Alpha Vantage (free
+// key, if set) → Yahoo. A BSE listing gets its own instrument id.
+const nse = await call(carol.token, 'POST', '/api/v1/holdings/manual', {
+  instrument: {
+    name: 'Reliance Industries',
+    assetClass: 'IN_EQUITY',
+    symbol: 'RELIANCE',
+    exchange: 'NSE',
+  },
+  qty: '10',
+  price: '1200',
+  tradeDate: '2025-02-03',
+});
+const bse = await call(carol.token, 'POST', '/api/v1/holdings/manual', {
+  instrument: {
+    name: 'Reliance Industries (BSE)',
+    assetClass: 'IN_EQUITY',
+    symbol: 'RELIANCE',
+    exchange: 'BSE',
+  },
+  qty: '5',
+  price: '1210',
+  tradeDate: '2025-02-03',
+});
+check(
+  'NSE and BSE listings are separate instruments',
+  nse.body?.instrumentId === 'IN_EQUITY:RELIANCE' &&
+    bse.body?.instrumentId === 'IN_EQUITY:BSE:RELIANCE',
+  JSON.stringify([nse.body, bse.body]),
+);
+const badSym = await call(carol.token, 'POST', '/api/v1/holdings/manual', {
+  instrument: {
+    name: 'x',
+    assetClass: 'IN_EQUITY',
+    symbol: '../v7/finance/quote?x=',
+    exchange: 'NSE',
+  },
+  qty: '1',
+  price: '1',
+  tradeDate: '2025-02-03',
+});
+check(
+  'symbol that could alter a provider URL → 422',
+  badSym.status === 422,
+  JSON.stringify(badSym.body),
+);
+
 const r1 = await call(carol.token, 'POST', '/api/v1/refresh');
 check(
   'refresh → 200 with snapshot id',
@@ -244,9 +291,19 @@ check(
   JSON.stringify({ sources: r1.body?.sources, unpriced: r1.body?.unpriced }),
 );
 check(
-  'US price unavailable without a key, reported (not silently zero)',
-  r1.body?.unpriced?.includes('US_EQUITY:AAPL') &&
-    r1.body?.problems?.some((p) => p.provider === 'finnhub'),
+  'NSE, BSE and US stocks priced with no paid keys (Yahoo unofficial fallback)',
+  ['IN_EQUITY:RELIANCE', 'IN_EQUITY:BSE:RELIANCE', 'US_EQUITY:AAPL'].every(
+    (id) => !r1.body?.unpriced?.includes(id),
+  ),
+  JSON.stringify({
+    sources: r1.body?.sources,
+    unpriced: r1.body?.unpriced,
+    problems: r1.body?.problems,
+  }),
+);
+check(
+  'providers without a free key are reported as "not configured", not errors',
+  (r1.body?.problems ?? []).every((p) => /not configured|disabled|quota/.test(p.message)),
   JSON.stringify(r1.body?.problems),
 );
 
@@ -261,16 +318,24 @@ check(
   !!field(cbook, 'lastRefresh', 'snapshotId') && Number(str(field(cbook, 'fx', 'rate'))) > 50,
 );
 check(
-  'AAPL shown as missing price, not zero',
-  str(field(cbook, 'holdings', 'manual|US_EQUITY:AAPL', 'priceStatus')) === 'missing',
+  'US stock valued in ₹ via Yahoo (unofficial) × FX',
+  str(field(cbook, 'holdings', 'manual|US_EQUITY:AAPL', 'price', 'source')) ===
+    'yahoo-unofficial' &&
+    Number(str(field(cbook, 'holdings', 'manual|US_EQUITY:AAPL', 'value'))) > 0,
 );
 
 const snap = await readDoc(`users/${carol.uid}/snapshots/${r1.body?.snapshotId}`);
 const rows = field(snap, 'rows')?.arrayValue?.values ?? [];
+const rowSources = rows.map((r) => r.mapValue?.fields?.src?.stringValue);
 check(
-  'snapshot is immutable record with rows + trigger',
-  str(field(snap, 'trigger')) === 'manual' && rows.length === 3,
-  `rows=${rows.length}`,
+  'snapshot records the provider for every price',
+  str(field(snap, 'trigger')) === 'manual' && rows.length === 5 && rowSources.every(Boolean),
+  `rows=${rows.length} sources=${rowSources}`,
+);
+check(
+  'unofficial prices are labelled as such in the snapshot',
+  rowSources.filter((s) => s === 'yahoo-unofficial').length >= 2,
+  String(rowSources),
 );
 const series = await readDoc(`users/${carol.uid}/series/${today.slice(0, 4)}`);
 check("series has today's point", !!field(series, 'd', today));

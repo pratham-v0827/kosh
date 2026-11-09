@@ -10,6 +10,7 @@ import { ErrorState } from '@/components/empty-state';
 import { Change, Money } from '@/components/num';
 import { formatAsOf, PriceBadge, sourceLabel } from '@/components/price-badge';
 import { PriceDialog } from '@/components/price-dialog';
+import { UnlistedPriceLinks } from '@/components/unlisted-price-links';
 import { useFormat } from '@/components/providers/settings-provider';
 import { TransactionDialog, TXN_LABELS } from '@/components/transaction-dialog';
 import {
@@ -272,6 +273,17 @@ export function HoldingDetail() {
           {row.price?.source === 'manual' && (
             <p className="mt-4 text-xs text-muted-foreground">
               Manual, indicative price entered by you.
+            </p>
+          )}
+          {row.assetClass === 'UNLISTED' && (
+            <div className="mt-4">
+              <UnlistedPriceLinks />
+            </div>
+          )}
+          {row.price?.source === 'yahoo-unofficial' && (
+            <p className="mt-4 text-xs text-muted-foreground">
+              From Yahoo Finance’s unofficial endpoint: may be delayed, and may stop working without
+              notice.
             </p>
           )}
           {row.currency === 'USD' && row.fxEffect !== null && (

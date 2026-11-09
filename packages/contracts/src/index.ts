@@ -65,21 +65,33 @@ export const DEFAULT_SETTINGS: Settings = {
 
 // ---------- manual holdings & ledger ----------
 
-export const InstrumentInput = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(120),
-  assetClass: AssetClassSchema,
-  /** ISIN, NSE/US ticker, AMFI code or coin symbol. Optional for unlisted companies. */
-  symbol: z.preprocess(
-    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-    z
-      .string()
-      .trim()
-      .toUpperCase()
-      .max(32)
-      .regex(/^[A-Z0-9.\-&_:]+$/, 'Letters, digits and . - & _ : only')
-      .optional(),
-  ),
-});
+export const ExchangeSchema = z.enum(['NSE', 'BSE']);
+
+export const InstrumentInput = z
+  .object({
+    name: z.string().trim().min(1, 'Name is required').max(120),
+    assetClass: AssetClassSchema,
+    /**
+     * NSE/BSE or US ticker, AMFI code / ISIN, or coin symbol. Optional for unlisted companies.
+     * Restricted characters: it becomes part of a document id and of provider URLs.
+     */
+    symbol: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z
+        .string()
+        .trim()
+        .toUpperCase()
+        .max(20)
+        .regex(/^[A-Z0-9][A-Z0-9.\-&]*$/, 'Letters, digits and . - & only')
+        .optional(),
+    ),
+    /** Where an Indian stock is listed. Default NSE. Drives which price source is used. */
+    exchange: ExchangeSchema.optional(),
+  })
+  .refine((v) => !v.exchange || v.assetClass === 'IN_EQUITY', {
+    path: ['exchange'],
+    message: 'Exchange applies to Indian stocks only',
+  });
 export type InstrumentInput = z.infer<typeof InstrumentInput>;
 
 const note = z.string().trim().max(200).optional();

@@ -101,3 +101,48 @@ describe('SettingsSchema', () => {
     );
   });
 });
+
+describe('InstrumentInput symbol and exchange (M2.1)', () => {
+  const base = { name: 'Reliance', assetClass: 'IN_EQUITY' as const };
+
+  it('accepts NSE/BSE tickers and US class tickers', () => {
+    expect(ManualHoldingInputInstrument({ ...base, symbol: 'reliance', exchange: 'BSE' })).toBe(
+      true,
+    );
+    expect(ManualHoldingInputInstrument({ ...base, symbol: 'M&M' })).toBe(true);
+    expect(
+      ManualHoldingInputInstrument({ name: 'Berkshire', assetClass: 'US_EQUITY', symbol: 'BRK.B' }),
+    ).toBe(true);
+  });
+
+  it('rejects characters that could alter ids or URLs, and over-long symbols', () => {
+    for (const symbol of [
+      'IN:EVIL',
+      'A/B',
+      '../x',
+      'A B',
+      'A?x=1',
+      '%2F',
+      'A'.repeat(21),
+      '-LEADING',
+    ]) {
+      expect(ManualHoldingInputInstrument({ ...base, symbol }), symbol).toBe(false);
+    }
+  });
+
+  it('allows an exchange only for Indian stocks', () => {
+    expect(
+      ManualHoldingInputInstrument({
+        name: 'Apple',
+        assetClass: 'US_EQUITY',
+        symbol: 'AAPL',
+        exchange: 'NSE',
+      }),
+    ).toBe(false);
+  });
+});
+
+import { InstrumentInput } from '../src';
+function ManualHoldingInputInstrument(v: unknown) {
+  return InstrumentInput.safeParse(v).success;
+}

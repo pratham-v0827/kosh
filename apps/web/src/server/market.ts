@@ -7,6 +7,7 @@ import {
   fxFreshness,
   type ProviderContext,
   type QuoteCache,
+  type RequestBudget,
 } from '@kosh/prices';
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
@@ -19,10 +20,48 @@ import { adminDb } from '@/lib/firebase/admin';
  *   trackedInstruments/{id}      instruments the daily job should price (no user ids)
  */
 
+/**
+ * Daily request allowance shared by ALL users and server instances (e.g. Alpha Vantage's free
+ * ~25/day). Stored at providerBudgets/{provider}_{UTC date}; reservations are transactional.
+ */
+export class FirestoreRequestBudget implements RequestBudget {
+  constructor(private readonly db: Firestore = adminDb()) {}
+
+  private ref(provider: string) {
+    // Free-tier quotas reset daily; UTC date keeps all instances in agreement.
+    const day = new Date().toISOString().slice(0, 10);
+    return this.db.doc(`providerBudgets/${provider}_${day}`);
+  }
+
+  async reserve(provider: string, n: number, dailyLimit: number): Promise<number> {
+    if (n <= 0 || dailyLimit <= 0) return 0;
+    const ref = this.ref(provider);
+    return this.db.runTransaction(async (tx) => {
+      const used = ((await tx.get(ref)).get('used') as number | undefined) ?? 0;
+      const granted = Math.max(0, Math.min(n, dailyLimit - used));
+      if (granted > 0)
+        tx.set(
+          ref,
+          { used: used + granted, limit: dailyLimit, updatedAt: new Date() },
+          { merge: true },
+        );
+      return granted;
+    });
+  }
+
+  async exhaust(provider: string, dailyLimit: number): Promise<void> {
+    await this.ref(provider).set(
+      { used: dailyLimit, limit: dailyLimit, exhaustedAt: new Date() },
+      { merge: true },
+    );
+  }
+}
+
 export const providerContext = (now = new Date()): ProviderContext => ({
   fetch: globalThis.fetch.bind(globalThis),
   now,
   env: process.env,
+  budget: new FirestoreRequestBudget(),
 });
 
 export class FirestoreQuoteCache implements QuoteCache {

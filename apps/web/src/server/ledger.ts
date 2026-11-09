@@ -48,6 +48,7 @@ interface InstrumentDoc {
   symbol: string | null;
   /** Absent on M1-era docs, which were always INR. */
   currency?: Currency;
+  exchange?: 'NSE' | 'BSE';
 }
 
 export const istToday = (d = new Date()) =>
@@ -61,8 +62,12 @@ const slug = (s: string) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'holding';
 
+/** NSE (the default) keeps the short id; BSE listings get their own id so both can coexist. */
 export function instrumentIdFor(input: InstrumentInput): string {
-  return `${input.assetClass}:${input.symbol ?? slug(input.name)}`;
+  const key = input.symbol ?? slug(input.name);
+  return input.assetClass === 'IN_EQUITY' && input.exchange === 'BSE'
+    ? `IN_EQUITY:BSE:${key}`
+    : `${input.assetClass}:${key}`;
 }
 
 /** Manual-refresh limits (docs/PLAN.md §6.2). Scheduled refreshes are exempt. */
@@ -299,6 +304,7 @@ export async function applyLedgerChange(
           assetClass: i.assetClass,
           symbol: i.symbol,
           currency: i.currency ?? defaultCurrency(i.assetClass),
+          ...(i.assetClass === 'IN_EQUITY' ? { exchange: i.exchange ?? 'NSE' } : {}),
           createdAt: ts,
         };
         tx.set(userRef.collection('instruments').doc(i.id), doc);
@@ -306,7 +312,11 @@ export async function applyLedgerChange(
           // Public identifiers only: lets the daily job price it without knowing who holds it.
           tx.set(
             db.doc(`trackedInstruments/${i.id}`),
-            { assetClass: i.assetClass, symbol: i.symbol },
+            {
+              assetClass: i.assetClass,
+              symbol: i.symbol,
+              ...(i.assetClass === 'IN_EQUITY' ? { exchange: i.exchange ?? 'NSE' } : {}),
+            },
             { merge: true },
           );
         }

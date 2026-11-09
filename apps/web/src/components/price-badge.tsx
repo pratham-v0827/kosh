@@ -13,6 +13,8 @@ export const SOURCE_LABELS: Record<string, string> = {
   'coindcx-ticker': 'CoinDCX',
   finnhub: 'Finnhub',
   twelvedata: 'Twelve Data',
+  'yahoo-unofficial': 'Yahoo Finance (unofficial)',
+  alphavantage: 'Alpha Vantage',
   'frankfurter-ecb': 'ECB reference rate',
 };
 
