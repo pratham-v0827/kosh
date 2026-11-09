@@ -91,10 +91,34 @@ docs/             Plan, architecture decision records (ADRs)
 
 More packages (parsers, prices, integrations, email, MCP tools) arrive with their milestones.
 
-## Self-hosting
+## Self-hosting in 15 minutes
 
-A full guide (Firebase project, Vercel, environment variables, budget alerts) ships with M9.
-Every variable is documented in [.env.example](.env.example).
+Kosh runs on **your own** free Firebase project (Spark plan) and Vercel Hobby account. It uses no paid keys and doesn't depend on anyone else's accounts. Full guide: [docs/self-hosting.md](docs/self-hosting.md).
+
+1. **Firebase** (console.firebase.google.com, Spark):
+   - create a project;
+   - enable Authentication → Google and Email link;
+   - create a Firestore database;
+   - register a web app and copy its config.
+2. **Rules:** `copy .firebaserc.example .firebaserc`, put your project id in it, then run `pnpm exec firebase login` and `pnpm firebase:deploy-rules`.
+3. **Service account:** Project settings → Service accounts → Generate new private key → base64 it (never commit the file).
+4. **Optional free keys:** Alpha Vantage (BSE prices), Finnhub / Twelve Data (US prices).
+5. **Vercel:** import the repo, set Root Directory to `apps/web`, add the variables from [.env.example](.env.example), and deploy. Run `pnpm check-env --file apps/web/.env.local` first to catch mistakes.
+6. Sign in, then `pnpm admin:grant --email you@example.com` to make yourself admin.
+
+### Price sources and the unofficial Yahoo endpoint
+
+| Holdings        | Source (in order)                          | Key             |
+| --------------- | ------------------------------------------ | --------------- |
+| NSE stocks      | Yahoo Finance (**unofficial**)             | none            |
+| BSE stocks      | Alpha Vantage → Yahoo (unofficial)         | free (optional) |
+| US stocks       | Finnhub → Twelve Data → Yahoo (unofficial) | free (optional) |
+| Mutual funds    | AMFI NAV file → mfapi.in                   | none            |
+| Crypto          | CoinDCX public ticker                      | none            |
+| USD/INR         | ECB reference rates (Frankfurter)          | none            |
+| Unlisted shares | manual (links to public price lists)       | —               |
+
+> **Yahoo Finance is not an official API.** Kosh calls the endpoint Yahoo's own website uses, as an honest, identified client, with caching and throttling. It may change or stop without notice, and Yahoo's terms of service may not permit this use. It is **on by default**; self-hosters decide for themselves and can switch it off with `ENABLE_UNOFFICIAL_YAHOO=false`. See [docs/prices.md](docs/prices.md).
 
 ## Contributing and security
 

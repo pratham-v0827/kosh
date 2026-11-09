@@ -18,4 +18,4 @@ API usage scales with unique instruments, not users.
 
 ## Would change if
 
-A licensed paid data feed → swap the primary provider.
+A free official feed becomes available → put it first in packages/prices/src/routing.ts.

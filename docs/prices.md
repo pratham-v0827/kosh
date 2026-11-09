@@ -10,25 +10,51 @@ Kosh accesses sources politely. It sends an honest `User-Agent`, caches results,
 
 ## Sources by asset type
 
-| Asset type      | Source (in order)                   | Key needed | Notes                                                                                                                                                              |
-| --------------- | ----------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Mutual funds    | AMFI daily NAV file → mfapi.in      | No         | One ~1.5 MB file covers every scheme. Needs the AMFI scheme code (e.g. `120590`) or ISIN as the holding's symbol. Format re-verified 2026-11-09 (8 columns).       |
-| Crypto          | CoinDCX public ticker (INR markets) | No         | Day change is the 24-hour move, derived from CoinDCX's 24h %.                                                                                                      |
-| US stocks       | Finnhub → Twelve Data               | Yes (free) | Set `FINNHUB_API_KEY` and/or `TWELVEDATA_API_KEY`. Free tiers may delay quotes and may be personal-use only (check their terms). Without a key, use manual prices. |
-| USD/INR         | Frankfurter (ECB reference rates)   | No         | Daily. Trades use the ECB rate for the trade date (closest earlier business day) unless you enter your own.                                                        |
-| Indian stocks   | none (manual)                       | —          | See below.                                                                                                                                                         |
-| Unlisted shares | manual                              | —          | Public quotes are indicative dealer prices that vary between sites.                                                                                                |
+Routing lives in one place: `packages/prices/src/routing.ts`. Earlier sources win; later ones are fallbacks. Every source is free: either no key, or a free key you create.
 
-### Why Indian stocks are manual (for now)
+| Holdings        | Source (in order)                          | Key                                    | Notes                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------- | ------------------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| NSE stocks      | Yahoo Finance (**unofficial**)             | none                                   | Needs the exchange ticker (e.g. `RELIANCE`, not the ISIN).                                                                                                                                                                                                                                                                                                                                       |
+| BSE stocks      | Alpha Vantage → Yahoo (unofficial)         | free `ALPHAVANTAGE_API_KEY` (optional) | Free tier ≈ 25 calls/day, ≈ 5/min (third-party figures, 2026). Kosh keeps a **shared daily budget** in Firestore (`providerBudgets/alphavantage_{UTC date}`), makes at most 3 Alpha Vantage calls per refresh, and stops for the day when the quota is used or the API says "rate limit"; the rest falls back to Yahoo (`.BO`). Symbol format `<TICKER>.BSE` is community-reported (unverified). |
+| US stocks       | Finnhub → Twelve Data → Yahoo (unofficial) | free keys (optional)                   | Without keys, Yahoo is used.                                                                                                                                                                                                                                                                                                                                                                     |
+| Mutual funds    | AMFI daily NAV file → mfapi.in             | none                                   | One ~1.5 MB file covers every scheme. Needs the AMFI scheme code (e.g. `120590`) or ISIN. Format re-verified 2026-11-09 (8 columns).                                                                                                                                                                                                                                                             |
+| Crypto          | CoinDCX public ticker (INR markets)        | none                                   | Day change is the 24-hour move.                                                                                                                                                                                                                                                                                                                                                                  |
+| USD/INR         | Frankfurter (ECB reference rates)          | none                                   | Trades use the ECB rate for the trade date (closest earlier business day) unless you enter your own.                                                                                                                                                                                                                                                                                             |
+| Unlisted shares | manual                                     | —                                      | See below.                                                                                                                                                                                                                                                                                                                                                                                       |
 
-The plan's primary source was the NSE/BSE end-of-day "bhavcopy" files. When this was tested on 2026-11-09, both exchanges refused automated downloads, and getting past that would mean evading their bot protection. Kosh does not do that. The other options:
+### Yahoo Finance is unofficial
 
-- **Kite Connect (Zerodha):** the free Personal plan has no market data. The paid Connect plan (₹500/month) includes quotes, but Zerodha says displaying Kite data on other platforms can breach exchange data-vending rules. It may still suit a _personal_ instance; to be decided in M4.
-- **Alpha Vantage:** BSE symbols (`RELIANCE.BSE`) are reported to work on the free tier, but at about 25 calls/day and with unverified coverage.
-- **Unofficial Yahoo Finance:** terms unverified. Kept off by default (`ENABLE_UNOFFICIAL_YAHOO=false`); not implemented.
-- **Licensed data vendors:** paid.
+Kosh calls `query1.finance.yahoo.com/v8/finance/chart/{symbol}`, the endpoint Yahoo's website uses. On 2026-11-09 it answered an honest, identified client without cookies, a "crumb" or a browser disguise. Kosh would not add any of those.
 
-Until a permitted source is chosen, set Indian stock prices manually. Prices older than one trading day are flagged as stale. A provider can be added later without data changes (see "Adding a provider").
+- It is **not an official API**: no documentation, no SLA, and it can change or stop without notice.
+- Yahoo's terms of service may not permit this use.
+
+How Kosh keeps the load low:
+
+- one request per symbol, serialised with a 400 ms gap;
+- an 8-second timeout and two retries with backoff (429/5xx only);
+- a 15-minute shared cache;
+- a 10-minute back-off after a symbol fails everywhere;
+- responses are schema-validated, so a format change becomes "no price", never a wrong price.
+
+It is **on by default**. Self-hosters decide whether to keep it: `ENABLE_UNOFFICIAL_YAHOO=false` turns it off, and those holdings then need manual prices. Prices from it are labelled "Yahoo Finance (unofficial)" in the app and recorded as `yahoo-unofficial` in every snapshot.
+
+### Why NSE/BSE files are not used
+
+The exchanges' own end-of-day "bhavcopy" files refused automated downloads when tested on 2026-11-09. Getting past that would mean evading bot protection, which Kosh does not do (ADR-0019).
+
+### Unlisted shares: why Kosh does not scrape price sites
+
+Checked 2026-11-09:
+
+| Site                             | robots.txt / response                         | Terms                                                                                                                                  | Result                                                                       |
+| -------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| SharesCart, UnlistedZone, Altius | no response to an identified automated client | —                                                                                                                                      | not used: they don't serve automated clients, and Kosh won't disguise itself |
+| InCred Money                     | robots allows                                 | forbids "any robot, spider, other automatic device… to monitor or copy our Website without our prior written permission"               | not used                                                                     |
+| Precize                          | robots allows                                 | licence "does not include the right to copy or reproduce the information… on any other platform… without our prior written permission" | not used                                                                     |
+| Planify                          | robots allows                                 | no data-use clause found                                                                                                               | not used without explicit permission                                         |
+
+So unlisted prices stay **manual**. Each unlisted holding links to public price lists (SharesCart, UnlistedZone, Precize) so you can check a quote and update the price yourself. If a site grants written permission, an `UNLISTED` provider can be added to the routing table.
 
 ## Refresh
 
@@ -37,7 +63,7 @@ Until a permitted source is chosen, set Indian stock prices manually. Prices old
 | **Refresh** button (header)                                                   | One per 5 minutes, 30 per day per user | Fetches quotes for the user's open holdings (cache-first), updates FX, recomputes the book, writes an immutable snapshot.                                      |
 | Daily job (`/api/cron/daily`, Vercel cron `30 1 * * *` UTC ≈ 07:00–07:59 IST) | Once per user per day                  | Prices every tracked instrument once, then snapshots each user in pages within the function time limit. Re-running the same day snapshots nobody (idempotent). |
 
-Cache lifetimes: crypto 5 min, US 15 min, end-of-day sources 6 h, FX 6 h. If every source fails, the last cached price is used and marked stale.
+Cache lifetimes: crypto 5 min, Indian and US stocks 15 min, end-of-day sources 6 h, FX 6 h. Within one refresh each symbol is fetched once; concurrent refreshes on the same server share in-flight lookups. If every source fails, the last cached price is used and marked stale.
 
 ### Stale prices
 

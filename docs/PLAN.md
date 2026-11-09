@@ -3,6 +3,8 @@
 > **Kosh** (कोश, "treasury / store of value") — *Every investment. One ledger.*
 > Open-source, multi-user investment tracker for Indian investors holding Indian + US equities, mutual funds, unlisted shares and crypto.
 >
+> **Update 2026-11-09:** owner constraint: **no paid keys or services anywhere** (paid options below are historical, not planned). Prices: ADR-0020. Self-hosting: docs/self-hosting.md.
+>
 > Status: **DRAFT — awaiting your approval.** Nothing has been scaffolded, deployed, or pushed.
 > Research date for every third-party claim: **2026-11-09** (web search). Sources are listed as `[S#]` in the appendix. Anything not confirmed from a primary source is labelled **unverified**.
 

@@ -1,6 +1,6 @@
 # 0019. Indian equity prices are manual until a permitted source is chosen
 
-- Status: Accepted (pending owner decision on a source)
+- Status: Superseded by ADR-0020 (owner chose free-only sources: Yahoo unofficial + Alpha Vantage BSE)
 - Date: 2026-11-09
 - Supersedes: the Indian-equity row of ADR-0007 / docs/PLAN.md ยง6.1
 
@@ -26,5 +26,5 @@ Indian equities are priced manually for now. The UI says so plainly (Settings โ
 
 ## Would change if
 
-- The owner picks a source: BYOK paid Kite Connect quotes for a personal instance, an Alpha Vantage key, a licensed vendor, or an explicitly opted-in unofficial source.
+- The owner picks a free source (done: ADR-0020).
 - NSE/BSE publish an access path for automated clients.
