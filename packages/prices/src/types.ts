@@ -85,3 +85,6 @@ export interface FxProvider {
   /** Reference rate for a date (or the closest earlier business day). */
   onDate(date: string, ctx: ProviderContext): Promise<FxRate>;
 }
+
+/** An Indian ISIN (e.g. INE002A01018): an identifier, never an exchange ticker. */
+export const INDIAN_ISIN = /^IN[A-Z0-9]{9}[0-9]$/;

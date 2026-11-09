@@ -117,7 +117,9 @@ describe('Yahoo (unofficial) — real responses captured 2026-11-09', () => {
     expect(yahooSymbol(NSE)).toBe('RELIANCE.NS');
     expect(yahooSymbol(BSE)).toBe('RELIANCE.BO');
     expect(yahooSymbol({ ...AAPL, symbol: 'BRK.B' })).toBe('BRK-B');
-    expect(yahooSymbol({ ...NSE, symbol: 'INE002A01018' })).toBe('INE002A01018.NS'); // valid chars; Yahoo 404s it
+    // BUG-007: ISINs are not Yahoo tickers; asking for them wastes a request every refresh
+    expect(yahooSymbol({ ...NSE, symbol: 'INE002A01018' })).toBeNull();
+    expect(yahooSymbol({ ...NSE, symbol: 'INFY' })).toBe('INFY.NS');
     expect(yahooSymbol({ ...NSE, symbol: '../v7/finance/quote?x=' })).toBeNull();
     expect(yahooSymbol({ ...NSE, symbol: 'A B' })).toBeNull();
     expect(
@@ -191,6 +193,7 @@ describe('Alpha Vantage (free key, BSE only)', () => {
   it('only serves BSE Indian stocks', () => {
     expect(avSymbol(BSE)).toBe('RELIANCE.BSE');
     expect(avSymbol(NSE)).toBeNull();
+    expect(avSymbol({ ...BSE, symbol: 'INE002A01018' })).toBeNull(); // BUG-007
     expect(avSymbol(AAPL)).toBeNull();
     expect(alphaVantageProvider.supports(NSE)).toBe(false);
   });

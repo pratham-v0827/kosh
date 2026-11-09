@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { createThrottle, getText, ProviderError } from '../http';
-import type { PriceProvider, PriceTarget, Quote } from '../types';
+import { INDIAN_ISIN, type PriceProvider, type PriceTarget, type Quote } from '../types';
 
 /**
  * Yahoo Finance — UNOFFICIAL. This is Yahoo's own website endpoint, not a public API: there is
@@ -49,7 +49,8 @@ export function yahooSymbol(t: PriceTarget): string | null {
   if (t.assetClass === 'US_EQUITY')
     return /^[A-Z][A-Z0-9.\-]{0,9}$/.test(t.symbol) ? t.symbol.replace('.', '-') : null;
   if (t.assetClass === 'IN_EQUITY') {
-    if (!/^[A-Z0-9&\-]{1,20}$/.test(t.symbol)) return null; // ISINs and odd strings are not tickers
+    if (!/^[A-Z0-9&\-]{1,20}$/.test(t.symbol)) return null; // odd strings are not tickers
+    if (INDIAN_ISIN.test(t.symbol)) return null; // BUG-007: ISINs passed the charset check above
     return `${t.symbol}.${t.exchange === 'BSE' ? 'BO' : 'NS'}`;
   }
   return null;

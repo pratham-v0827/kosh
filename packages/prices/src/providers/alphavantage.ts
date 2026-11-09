@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { createThrottle, getText, istCloseIso, ProviderError } from '../http';
-import type { PriceProvider, PriceTarget, Quote } from '../types';
+import { INDIAN_ISIN, type PriceProvider, type PriceTarget, type Quote } from '../types';
 
 /**
  * Alpha Vantage, FREE key, used ONLY for BSE-listed Indian stocks.
@@ -49,7 +49,8 @@ export type AvOutcome =
 export function avSymbol(t: PriceTarget): string | null {
   return t.assetClass === 'IN_EQUITY' &&
     t.exchange === 'BSE' &&
-    /^[A-Z0-9&\-]{1,20}$/.test(t.symbol)
+    /^[A-Z0-9&\-]{1,20}$/.test(t.symbol) &&
+    !INDIAN_ISIN.test(t.symbol) // BUG-007: never spend the daily budget on an ISIN
     ? `${t.symbol}.BSE`
     : null;
 }
