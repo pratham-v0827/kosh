@@ -8,6 +8,7 @@ import {
   resolveCurrency,
   toLedgerFields,
 } from '@/server/ledger';
+import { docIdParam } from '@/server/params';
 
 type Ctx = RouteContext<'/api/v1/transactions/[id]'>;
 
@@ -17,7 +18,7 @@ type Ctx = RouteContext<'/api/v1/transactions/[id]'>;
  */
 export const PATCH = route(async (req: Request, ctx: Ctx) => {
   const { uid } = await requireUser(req);
-  const { id } = await ctx.params;
+  const id = docIdParam((await ctx.params).id);
   const input = await readJson(req, TransactionInput);
   const old = await getActiveTxn(uid, id);
   if (old.instrumentId !== input.instrumentId) {
@@ -48,7 +49,7 @@ export const PATCH = route(async (req: Request, ctx: Ctx) => {
 /** DELETE /api/v1/transactions/:id: void (kept for history, excluded from the book). */
 export const DELETE = route(async (req: Request, ctx: Ctx) => {
   const { uid } = await requireUser(req);
-  const { id } = await ctx.params;
+  const id = docIdParam((await ctx.params).id);
   const result = await applyLedgerChange(uid, { retire: [{ id, status: 'void' }] });
   return ok({ bookVersion: result.bookVersion });
 });
