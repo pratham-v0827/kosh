@@ -97,6 +97,16 @@ export async function refreshQuotes(o: RefreshQuotesOptions): Promise<RefreshQuo
     inflight.set(t.instrumentId, new Promise((resolve) => settle.set(t.instrumentId, resolve)));
   }
 
+  // SEC-006 fairness: instruments that already have a price go first (oldest first); never-priced
+  // ones (new, or fake tickers) go last, so they cannot starve the rest when a provider is capped.
+  const age = (t: PriceTarget) => {
+    const c = cached.get(t.instrumentId);
+    return c ? Date.parse(c.fetchedAt) : Number.POSITIVE_INFINITY;
+  };
+  mine.sort((a, b) => age(a) - age(b));
+  /** Not attempted because of a provider's per-run cap: not a failure, just "next run". */
+  const deferred = new Set<string>();
+
   const fresh: CachedQuote[] = [];
   const fetched: Record<string, number> = {};
   const errors: RefreshQuotesResult['errors'] = [];
@@ -147,9 +157,11 @@ export async function refreshQuotes(o: RefreshQuotesOptions): Promise<RefreshQuo
           report(p.id, `not configured (${p.requiresEnv})`);
           continue;
         }
+        const attempt = p.maxPerRun ? candidates.slice(0, p.maxPerRun) : candidates;
+        for (const t of candidates.slice(attempt.length)) deferred.add(t.instrumentId);
         let got: Map<string, Quote>;
         try {
-          got = await p.fetch(candidates, o.ctx);
+          got = await p.fetch(attempt, o.ctx);
         } catch (e) {
           report(p.id, e instanceof Error ? e.message : String(e));
           got = e instanceof ProviderError && e.partial ? e.partial : new Map();
@@ -157,7 +169,8 @@ export async function refreshQuotes(o: RefreshQuotesOptions): Promise<RefreshQuo
         accept(got, p.id);
         remaining = remaining.filter((t) => !got.has(t.instrumentId));
       }
-      for (const t of remaining) failedAt.set(t.instrumentId, now);
+      for (const t of remaining)
+        if (!deferred.has(t.instrumentId)) failedAt.set(t.instrumentId, now);
     }
     if (fresh.length) await o.cache.putMany(fresh);
   } finally {

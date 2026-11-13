@@ -70,6 +70,11 @@ export interface PriceProvider {
   requiresEnv?: string;
   /** Feature flag check (e.g. ENABLE_UNOFFICIAL_YAHOO). Default: enabled. */
   isEnabled?(env: Record<string, string | undefined>): boolean;
+  /**
+   * Most symbols to ask for in one run (one-request-per-symbol sources). The rest wait for the
+   * next run, so a long list can never stall a serverless function (SEC-006).
+   */
+  maxPerRun?: number;
   /** Whether this provider can serve the target (e.g. symbol format, exchange). */
   supports(target: PriceTarget): boolean;
   /**

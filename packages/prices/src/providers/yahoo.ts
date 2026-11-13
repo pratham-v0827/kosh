@@ -108,6 +108,8 @@ export const yahooProvider: PriceProvider = {
   id: 'yahoo-unofficial',
   label: 'Yahoo Finance (unofficial)',
   unofficial: true,
+  // 400 ms between calls → at most ~16 s per run, leaving room inside a 60 s function.
+  maxPerRun: 40,
   assetClasses: ['IN_EQUITY', 'US_EQUITY'],
   isEnabled: (env) => (env.ENABLE_UNOFFICIAL_YAHOO ?? 'true').toLowerCase() !== 'false',
   supports: (t) => yahooSymbol(t) !== null,
