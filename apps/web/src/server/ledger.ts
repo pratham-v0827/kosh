@@ -20,6 +20,7 @@ import {
 } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
 import { HttpError } from './http';
+import { appendHistory, assertLedgerSize, nextWriteCounters, type WriteCounters } from './limits';
 import { fxOnDate, manualToPriceInfo, quoteToPriceInfo, readMarket } from './market';
 
 /**
@@ -212,6 +213,16 @@ export async function applyLedgerChange(
     }
     if (trigger === 'manual' || trigger === 'mcp')
       enforceRefreshLimits(metaSnap.data(), now, today);
+    // SEC-002: user edits (not refreshes) are rate limited per user, inside this transaction.
+    const isEdit =
+      !trigger &&
+      ((change.add?.length ?? 0) > 0 ||
+        (change.retire?.length ?? 0) > 0 ||
+        (change.instruments?.length ?? 0) > 0 ||
+        Object.keys(change.manualPrices ?? {}).length > 0);
+    const writeCounters = isEdit
+      ? nextWriteCounters(metaSnap.data() as Partial<WriteCounters> | undefined, now, today)
+      : null;
 
     const active = new Map<string, LedgerTxn>();
     for (const d of activeSnap.docs)
@@ -245,6 +256,13 @@ export async function applyLedgerChange(
     for (const i of change.instruments ?? []) instruments[i.id] ??= i;
     for (const t of active.values()) {
       if (!instruments[t.instrumentId]) throw new HttpError(404, 'NOT_FOUND', 'Unknown holding');
+    }
+    // SEC-003: manual prices only for the user's own instruments (also rejects odd ids like "a/b").
+    for (const id of Object.keys(change.manualPrices ?? {})) {
+      if (!instruments[id]) throw new HttpError(404, 'NOT_FOUND', 'Unknown holding');
+    }
+    if ((change.add?.length ?? 0) > 0 || (change.instruments?.length ?? 0) > 0) {
+      assertLedgerSize(active.size, Object.keys(instruments).length);
     }
 
     const market = await readMarket(tx, Object.keys(instruments), now);
@@ -322,17 +340,21 @@ export async function applyLedgerChange(
       }
     }
     for (const [id, p] of Object.entries(change.manualPrices ?? {})) {
+      const previous = priceSnap.docs.find((d) => d.id === id)?.get('history') as
+        { price: string; asOf: string; at: unknown }[] | undefined;
       tx.set(
         userRef.collection('manualPrices').doc(id),
         {
           price: p.price,
           asOf: p.asOf,
           updatedAt: ts,
-          history: FieldValue.arrayUnion({ price: p.price, asOf: p.asOf, at: now }),
+          // SEC-004: bounded (was an ever-growing arrayUnion)
+          history: appendHistory(previous, { price: p.price, asOf: p.asOf, at: now }),
         },
         { merge: true },
       );
     }
+    if (writeCounters) tx.set(metaRef, writeCounters, { merge: true });
     (change.add ?? []).forEach((a, i) => {
       const doc: TxnDoc = {
         ...a.fields,
