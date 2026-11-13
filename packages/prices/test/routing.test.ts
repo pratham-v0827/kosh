@@ -456,8 +456,10 @@ describe('refreshQuotes — routing, fallback, de-duplication', () => {
   it('end to end: BSE uses Alpha Vantage within budget, then falls back to Yahoo', async () => {
     const budget = new MemoryRequestBudget();
     await budget.exhaust('alphavantage', 25); // today's free quota already used
+    // Match on the parsed hostname, never on a substring of the URL.
+    const host = (u: string) => new URL(u).hostname;
     const { fn, calls } = fakeFetch((url) =>
-      url.includes('finance.yahoo.com')
+      host(url) === 'query1.finance.yahoo.com'
         ? new Response(fixture('yahoo-chart-RELIANCE.BO.json'))
         : json({}),
     );
@@ -468,7 +470,7 @@ describe('refreshQuotes — routing, fallback, de-duplication', () => {
       ctx: ctx(fn, { ALPHAVANTAGE_API_KEY: 'k', ALPHAVANTAGE_MIN_INTERVAL_MS: '0' }, budget),
     });
     expect(r.quotes.get(BSE.instrumentId)?.source).toBe('yahoo-unofficial');
-    expect(calls.some((u) => u.includes('alphavantage'))).toBe(false);
+    expect(calls.some((u) => host(u) === 'www.alphavantage.co')).toBe(false);
     expect(r.errors).toEqual([
       { provider: 'alphavantage', message: 'alphavantage: daily free quota used up' },
     ]);
