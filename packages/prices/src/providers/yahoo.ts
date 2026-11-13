@@ -47,9 +47,9 @@ const ChartResponse = z.object({
 /** Yahoo symbol for a Kosh target: RELIANCE → RELIANCE.NS / RELIANCE.BO; US tickers unchanged. */
 export function yahooSymbol(t: PriceTarget): string | null {
   if (t.assetClass === 'US_EQUITY')
-    return /^[A-Z][A-Z0-9.\-]{0,9}$/.test(t.symbol) ? t.symbol.replace('.', '-') : null;
+    return /^[A-Z][A-Z0-9.-]{0,9}$/.test(t.symbol) ? t.symbol.replace('.', '-') : null;
   if (t.assetClass === 'IN_EQUITY') {
-    if (!/^[A-Z0-9&\-]{1,20}$/.test(t.symbol)) return null; // odd strings are not tickers
+    if (!/^[A-Z0-9&-]{1,20}$/.test(t.symbol)) return null; // odd strings are not tickers
     if (INDIAN_ISIN.test(t.symbol)) return null; // BUG-007: ISINs passed the charset check above
     return `${t.symbol}.${t.exchange === 'BSE' ? 'BO' : 'NS'}`;
   }

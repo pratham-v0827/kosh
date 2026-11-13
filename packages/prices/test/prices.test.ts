@@ -3,18 +3,13 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   amfiNavProvider,
-  type CachedQuote,
   coindcxProvider,
-  coverage,
   finnhubProvider,
   frankfurterFx,
   freshness,
-  MemoryQuoteCache,
   parseNavAll,
-  type PriceProvider,
   type PriceTarget,
   type ProviderContext,
-  refreshQuotes,
   weekdaysBetween,
 } from '../src';
 

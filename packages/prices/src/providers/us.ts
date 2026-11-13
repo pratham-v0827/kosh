@@ -8,7 +8,7 @@ import type { PriceProvider, PriceTarget, Quote } from '../types';
  */
 
 const supportsUs = (t: PriceTarget) =>
-  t.assetClass === 'US_EQUITY' && /^[A-Z][A-Z0-9.\-]{0,9}$/.test(t.symbol);
+  t.assetClass === 'US_EQUITY' && /^[A-Z][A-Z0-9.-]{0,9}$/.test(t.symbol);
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
