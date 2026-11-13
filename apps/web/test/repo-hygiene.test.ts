@@ -28,5 +28,5 @@ describe('repository hygiene', () => {
       .split('\n')
       .filter(Boolean);
     expect(ignored).toEqual([]);
-  });
+  }, 60_000); // git can be slow on a cold index (CI, Windows)
 });

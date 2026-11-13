@@ -180,6 +180,56 @@ check('book value 70 × 275 = 19250', str(field(book, 'holdings', key, 'value'))
 // --- isolation: bob cannot touch alice's transactions ---
 const steal = await call(bob.token, 'DELETE', `/api/v1/transactions/${edit.body.transactionId}`);
 check("bob deleting alice's txn → 404", steal.status === 404, JSON.stringify(steal.body));
+const stealEdit = await call(
+  bob.token,
+  'PATCH',
+  `/api/v1/transactions/${edit.body.transactionId}`,
+  {
+    type: 'SELL',
+    instrumentId: inst,
+    tradeDate: today,
+    qty: '1',
+    price: '1',
+  },
+);
+check("bob editing alice's txn → 404", stealEdit.status === 404, JSON.stringify(stealEdit.body));
+const stealHolding = await call(
+  bob.token,
+  'DELETE',
+  `/api/v1/holdings/${encodeURIComponent(inst)}`,
+);
+check("bob deleting alice's holding → 404", stealHolding.status === 404);
+const stealSell = await call(bob.token, 'POST', '/api/v1/transactions', {
+  type: 'SELL',
+  instrumentId: inst,
+  tradeDate: today,
+  qty: '1',
+  price: '1',
+});
+check(
+  "bob selling alice's holding → 404",
+  stealSell.status === 404,
+  JSON.stringify(stealSell.body),
+);
+// SEC-003: a price for an instrument the caller does not hold must not create anything
+const stealPrice = await call(
+  bob.token,
+  'PUT',
+  `/api/v1/instruments/${encodeURIComponent(inst)}/price`,
+  { price: '1', asOf: today },
+);
+check(
+  "bob pricing alice's instrument → 404, nothing written",
+  stealPrice.status === 404 &&
+    (await readDoc(`users/${bob.uid}/manualPrices/${encodeURIComponent(inst)}`)) === null,
+  JSON.stringify(stealPrice.body),
+);
+const aliceBookAfter = await readDoc(`users/${alice.uid}/book/current`);
+check(
+  "alice's book is unchanged by bob's attempts (value 19250, qty 70)",
+  str(field(aliceBookAfter, 'holdings', key, 'value')) === '19250' &&
+    str(field(aliceBookAfter, 'holdings', key, 'qty')) === '70',
+);
 const bobBook = await readDoc(`users/${bob.uid}/book/current`);
 check('bob has no book', bobBook === null);
 
@@ -450,6 +500,168 @@ check(
     str(field(dbook2, 'holdings', brkKey, 'price', 'source')) === 'manual' &&
     str(field(dbook2, 'holdings', brkKey, 'price', 'price')) === '123.45',
   JSON.stringify({ setPrice, price: field(dbook2, 'holdings', brkKey, 'price') })?.slice(0, 300),
+);
+
+// =================== Phase 3 security audit (docs/audits/phase3-security.md) ===================
+console.log('\n— security —');
+const raw = (path, init = {}) => fetch(`${BASE}${path}`, init);
+
+// --- authentication ---
+const unsigned = [
+  Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url'),
+  Buffer.from(JSON.stringify({ sub: alice.uid, user_id: alice.uid, exp: 4102444800 })).toString(
+    'base64url',
+  ),
+  'x',
+].join('.');
+const tamperedSig = `${alice.token.split('.').slice(0, 2).join('.')}.AAAA`;
+const authStatuses = await Promise.all(
+  [null, 'garbage', unsigned.replace(/\.x$/, '.'), tamperedSig].map(
+    async (t) => (await call(t, 'POST', '/api/v1/refresh')).status,
+  ),
+);
+check(
+  'no token / garbage / malformed tokens → 401',
+  authStatuses.every((s) => s === 401),
+  String(authStatuses),
+);
+const basic = await raw('/api/v1/refresh', {
+  method: 'POST',
+  headers: { Authorization: `Basic ${alice.token}` },
+});
+check('wrong auth scheme → 401', basic.status === 401);
+
+// --- input handling ---
+const frank = await emulatorUser();
+await call(frank.token, 'POST', '/api/v1/session');
+const mass = await call(frank.token, 'POST', '/api/v1/holdings/manual', {
+  instrument: { name: '<img src=x onerror=alert(1)>', assetClass: 'UNLISTED' },
+  qty: '1',
+  price: '10',
+  tradeDate: '2025-01-10',
+  // fields a client must never control
+  uid: alice.uid,
+  accountId: 'zerodha',
+  status: 'void',
+  source: 'import',
+  role: 'admin',
+});
+const massTxn = await readDoc(`users/${frank.uid}/transactions/${mass.body?.transactionId}`);
+check(
+  'extra fields are ignored (no mass assignment)',
+  mass.status === 201 &&
+    str(field(massTxn, 'accountId')) === 'manual' &&
+    str(field(massTxn, 'status')) === 'active' &&
+    str(field(massTxn, 'source')) === 'manual' &&
+    !('uid' in (massTxn?.fields ?? {})) &&
+    !('role' in (massTxn?.fields ?? {})),
+  JSON.stringify(massTxn?.fields)?.slice(0, 300),
+);
+const frankMeta = await readDoc(`userMeta/${frank.uid}`);
+check('role cannot be self-assigned', str(field(frankMeta, 'role')) === 'user');
+
+const badIds = await Promise.all([
+  call(frank.token, 'DELETE', '/api/v1/holdings/%25zz'),
+  call(frank.token, 'DELETE', '/api/v1/holdings/UNLISTED%3Aa%2Fb'),
+  call(frank.token, 'DELETE', '/api/v1/transactions/a%2Fb'),
+  call(frank.token, 'DELETE', '/api/v1/transactions/..%2F..%2Fbook%2Fcurrent'),
+  call(frank.token, 'PUT', '/api/v1/instruments/__proto__/price', { price: '1', asOf: today }),
+]);
+check(
+  'malformed or path-like ids → 404, never 500',
+  badIds.every((r) => r.status === 404),
+  String(badIds.map((r) => r.status)),
+);
+
+const big = await raw('/api/v1/transactions', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${frank.token}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ note: 'x'.repeat(100_000) }),
+});
+check('oversized body → 413', big.status === 413, String(big.status));
+
+const wrongMethod = await raw('/api/v1/refresh', {
+  headers: { Authorization: `Bearer ${frank.token}` },
+});
+check('GET on a POST-only route → 405', wrongMethod.status === 405, String(wrongMethod.status));
+
+// --- per-user write rate limit (SEC-002): a burst must hit the limit, not the database ---
+const frankInst = mass.body?.instrumentId;
+let limited = null;
+for (let attempt = 0; attempt < 2 && !limited; attempt++) {
+  // 34 writes; retried once in case the burst straddled a minute boundary
+  for (let i = 0; i < 34 && !limited; i++) {
+    const r = await call(
+      frank.token,
+      'PUT',
+      `/api/v1/instruments/${encodeURIComponent(frankInst)}/price`,
+      { price: String(10 + i), asOf: today },
+    );
+    if (r.status === 429) limited = r;
+    else if (r.status !== 200) break;
+  }
+}
+check(
+  'burst of edits → 429 WRITE_RATE_LIMIT with retryAfter',
+  limited?.body?.error?.code === 'WRITE_RATE_LIMIT' && limited.body.error.details?.retryAfter > 0,
+  JSON.stringify(limited?.body),
+);
+const frankPrices = await readDoc(
+  `users/${frank.uid}/manualPrices/${encodeURIComponent(frankInst)}`,
+);
+check(
+  'manual price history is bounded (≤ 50 entries)',
+  (field(frankPrices, 'history')?.arrayValue?.values?.length ?? 0) <= 50,
+);
+
+// --- public surface ---
+const healthRes = await raw('/api/health');
+const healthBody = await healthRes.json();
+check(
+  'health: no write counter, cached read-only check',
+  healthRes.status === 200 && healthBody.status === 'ok' && !('pings' in healthBody.firestore),
+  JSON.stringify(healthBody),
+);
+const cors = await raw('/api/v1/session', {
+  method: 'OPTIONS',
+  headers: {
+    Origin: 'https://evil.example',
+    'Access-Control-Request-Method': 'POST',
+    'Access-Control-Request-Headers': 'authorization',
+  },
+});
+check(
+  'no CORS access for other origins',
+  cors.headers.get('access-control-allow-origin') === null,
+  String(cors.headers.get('access-control-allow-origin')),
+);
+for (const path of ['/', '/sign-in', '/api/health']) {
+  const res = await raw(path);
+  const csp = res.headers.get('content-security-policy') ?? '';
+  check(
+    `security headers on ${path}`,
+    csp.includes("default-src 'self'") &&
+      csp.includes("frame-ancestors 'none'") &&
+      csp.includes("object-src 'none'") &&
+      res.headers.get('x-content-type-options') === 'nosniff' &&
+      res.headers.get('x-frame-options') === 'DENY' &&
+      res.headers.get('referrer-policy') === 'strict-origin-when-cross-origin' &&
+      res.headers.get('x-powered-by') === null,
+    csp.slice(0, 120),
+  );
+}
+const errBody = await call(frank.token, 'POST', '/api/v1/transactions', {
+  type: 'SELL',
+  instrumentId: 'UNLISTED:does-not-exist',
+  tradeDate: today,
+  qty: '1',
+  price: '1',
+});
+check(
+  'errors carry a code and message only (no stack, paths or ids of others)',
+  errBody.status === 404 &&
+    !/node_modules|at \w+ \(|\.ts:|firestore|users\//i.test(JSON.stringify(errBody.body)),
+  JSON.stringify(errBody.body),
 );
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll API smoke checks passed');
