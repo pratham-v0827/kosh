@@ -145,6 +145,19 @@ Exceeding a Spark quota pauses that product until the quota resets; nothing is b
 - Rotate `CRON_SECRET` and the service-account key if they are ever exposed (Firebase console → Service accounts → manage keys → delete the old key).
 - Watch Firebase **Usage and billing** for quota warnings.
 
+### Built-in protections (no setup needed)
+
+These keep one account from using up the free quota for everyone
+(details: [audits/phase3-security.md](audits/phase3-security.md)):
+
+- Each user: 30 edits a minute, 500 a day; one refresh every 5 minutes, 30 a day; at most 500 holdings and 5,000 transactions.
+- `/api/cron/daily` answers 503 unless `CRON_SECRET` is at least 32 random characters.
+- `/api/health` is public but read-only and cached, and shows only `ok` or `degraded`.
+- The app refuses to start in emulator mode on Vercel, and sends a Content-Security-Policy on every page.
+
+If you open your instance to people you do not know, add an invite list or sign-up cap first:
+limits are per account, and accounts are free to create.
+
 ## Troubleshooting
 
 | Symptom                                      | Fix                                                                                                                    |
