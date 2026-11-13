@@ -262,3 +262,61 @@ describe('writes go through the server', () => {
     await assertFails(alice().doc('prices/INE002A01018').set({ price: '1' }));
   });
 });
+
+// ---------- Phase 3 security audit (docs/audits/phase3-security.md) ----------
+describe('bulk access and client-writable fields (SEC-012)', () => {
+  const serverTs = async () =>
+    (await import('firebase/compat/app')).default.firestore.FieldValue.serverTimestamp();
+
+  it('nobody can list all users or query across users', async () => {
+    await assertFails(alice().collection('users').get());
+    await assertFails(alice().collectionGroup('transactions').get());
+    await assertFails(alice().collectionGroup('book').get());
+    await assertFails(alice().collectionGroup('snapshots').get());
+    await assertFails(alice().collection('userMeta').get());
+    await assertFails(alice().collection('userMeta').where('status', '==', 'active').get());
+  });
+
+  it('server-only collections are closed to every client', async () => {
+    for (const path of [
+      'health/ping',
+      'metrics/daily_2026-11-09',
+      'rateLimits/x',
+      'oauthTokens/x',
+    ]) {
+      await assertFails(alice().doc(path).get());
+      await assertFails(alice().doc(path).set({ x: 1 }));
+    }
+  });
+
+  it('the staleness setting accepts only small per-asset-class day counts', async () => {
+    const ts = await serverTs();
+    await assertSucceeds(
+      alice()
+        .doc('users/alice')
+        .update({
+          settings: { ...settings, staleness: { CRYPTO: 2, UNLISTED: 90 } },
+          updatedAt: ts,
+        }),
+    );
+    // unknown keys, non-numbers and huge values would let a client bloat its own document
+    await assertFails(
+      alice()
+        .doc('users/alice')
+        .update({ settings: { ...settings, staleness: { junk: 1 } }, updatedAt: ts }),
+    );
+    await assertFails(
+      alice()
+        .doc('users/alice')
+        .update({
+          settings: { ...settings, staleness: { CRYPTO: 'x'.repeat(100_000) } },
+          updatedAt: ts,
+        }),
+    );
+    await assertFails(
+      alice()
+        .doc('users/alice')
+        .update({ settings: { ...settings, staleness: { CRYPTO: 100_000 } }, updatedAt: ts }),
+    );
+  });
+});
