@@ -5,6 +5,9 @@ const DEAD_SESSION_CODES = new Set([
   'auth/user-token-expired',
   'auth/user-not-found',
   'auth/invalid-user-token',
+  // BUG-012: the refresh token is unknown or revoked (seen after an account-store reset)
+  'auth/invalid-refresh-token',
+  'auth/user-token-revoked',
 ]);
 
 /**
