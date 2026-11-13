@@ -2,6 +2,7 @@ import 'server-only';
 import { type App, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { assertEmulatorModeAllowed } from './emulator-guard';
 
 /**
  * Firebase Admin SDK (server only). NOTE: the Admin SDK bypasses Firestore security rules,
@@ -13,21 +14,6 @@ export const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? '';
 export const usingEmulators = Boolean(
   process.env.FIRESTORE_EMULATOR_HOST || process.env.FIREBASE_AUTH_EMULATOR_HOST,
 );
-
-/**
- * With FIREBASE_AUTH_EMULATOR_HOST set, the Admin SDK accepts UNSIGNED emulator tokens. That must
- * never happen on a real deployment, so emulator mode is refused on Vercel production.
- */
-export function assertEmulatorModeAllowed(env = process.env) {
-  if (
-    (env.FIRESTORE_EMULATOR_HOST || env.FIREBASE_AUTH_EMULATOR_HOST) &&
-    env.VERCEL_ENV === 'production'
-  ) {
-    throw new Error(
-      'Emulator variables are set on a production deployment. Remove FIRESTORE_EMULATOR_HOST / FIREBASE_AUTH_EMULATOR_HOST.',
-    );
-  }
-}
 
 function createApp(): App {
   const existing = getApps()[0];
