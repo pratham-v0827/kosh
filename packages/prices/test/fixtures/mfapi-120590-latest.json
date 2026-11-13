@@ -1,0 +1,13 @@
+{
+  "meta": {
+    "fund_house": "ICICI Prudential Mutual Fund",
+    "scheme_type": "Open Ended Schemes",
+    "scheme_category": "Debt Scheme - Gilt Fund",
+    "scheme_code": 120590,
+    "scheme_name": "ICICI Prudential Gilt Fund - Direct Plan - Growth",
+    "isin_growth": "INF109K018C5",
+    "isin_div_reinvestment": null
+  },
+  "data": [{ "date": "06-11-2026", "nav": "116.73940" }],
+  "status": "SUCCESS"
+}

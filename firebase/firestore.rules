@@ -13,12 +13,22 @@ service cloud.firestore {
     function notBlocked() { return request.auth.token.get('blocked', false) != true; }
     function isAdmin() { return signedIn() && request.auth.token.get('role', 'user') == 'admin'; }
 
+    // Days after which a price counts as stale, per asset class (1…3650). Rules cannot loop over
+    // a map, so each allowed key is checked by name: this keeps a client-writable field small.
+    function validDays(m, k) { return !(k in m) || (m[k] is int && m[k] >= 1 && m[k] <= 3650); }
+    function validStaleness(m) {
+      return m is map
+        && m.keys().hasOnly(['IN_EQUITY', 'US_EQUITY', 'MUTUAL_FUND', 'UNLISTED', 'CRYPTO'])
+        && validDays(m, 'IN_EQUITY') && validDays(m, 'US_EQUITY') && validDays(m, 'MUTUAL_FUND')
+        && validDays(m, 'UNLISTED') && validDays(m, 'CRYPTO');
+    }
+
     function validSettings(s) {
       return s.keys().hasOnly(['baseCurrency', 'numberFormat', 'theme', 'staleness', 'email'])
         && s.baseCurrency == 'INR'
         && s.numberFormat in ['indian', 'international']
         && s.theme in ['system', 'light', 'dark']
-        && (!('staleness' in s) || s.staleness is map)
+        && (!('staleness' in s) || validStaleness(s.staleness))
         && s.email.keys().hasOnly(['enabled', 'frequency', 'weekday', 'nextDueAt'])
         && s.email.enabled is bool
         && s.email.frequency in ['weekly', 'monthly']
@@ -47,7 +57,7 @@ service cloud.firestore {
       match /{sub}/{docId} {
         allow read: if isOwner(uid) && notBlocked()
           && sub in ['accounts', 'transactions', 'corporateActions', 'book', 'snapshots',
-                     'series', 'imports', 'mcpAudit'];
+                     'series', 'imports', 'mcpAudit', 'instruments', 'manualPrices'];
         allow write: if false;
       }
       // There is deliberately NO rule granting isAdmin() anything under /users.

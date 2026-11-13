@@ -1,0 +1,72 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "INR",
+          "symbol": "RELIANCE.BO",
+          "exchangeName": "BSE",
+          "fullExchangeName": "BSE",
+          "instrumentType": "EQUITY",
+          "firstTradeDate": 1784259900,
+          "regularMarketTime": 1794220089,
+          "hasPrePostMarketData": false,
+          "gmtoffset": 19800,
+          "timezone": "IST",
+          "exchangeTimezoneName": "Asia/Kolkata",
+          "regularMarketPrice": 1323.9,
+          "regularMarketChangePercent": 0.068,
+          "fulldayPrice": 1323.9,
+          "fulldayChange": 0.9,
+          "fulldayChangePercent": 0.068,
+          "fiftyTwoWeekHigh": 1611.2,
+          "fiftyTwoWeekLow": 1115.55,
+          "regularMarketDayHigh": 1330.25,
+          "regularMarketDayLow": 1305.4,
+          "regularMarketVolume": 1137600,
+          "longName": "Reliance Industries Limited",
+          "shortName": "RELIANCE INDUSTRIES LTD.",
+          "chartPreviousClose": 1323.0,
+          "priceHint": 2,
+          "currentTradingPeriod": {
+            "pre": {
+              "timezone": "IST",
+              "end": 1794195900,
+              "start": 1794195900,
+              "gmtoffset": 19800
+            },
+            "regular": {
+              "timezone": "IST",
+              "end": 1794218400,
+              "start": 1794195900,
+              "gmtoffset": 19800
+            },
+            "post": {
+              "timezone": "IST",
+              "end": 1794218400,
+              "start": 1794218400,
+              "gmtoffset": 19800
+            }
+          },
+          "dataGranularity": "1d",
+          "range": "5d",
+          "validRanges": ["1d", "5d", "1mo", "3mo", "6mo", "ytd", "max"]
+        },
+        "timestamp": [1794220089],
+        "indicators": {
+          "quote": [
+            {
+              "open": [1316.8499755859375],
+              "close": [1323.9000244140625],
+              "high": [1330.25],
+              "volume": [1137600],
+              "low": [1305.4000244140625]
+            }
+          ],
+          "adjclose": [{ "adjclose": [1323.9000244140625] }]
+        }
+      }
+    ],
+    "error": null
+  }
+}

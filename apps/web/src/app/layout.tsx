@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
+import { Providers } from '@/components/providers';
 import './globals.css';
 
 const inter = Inter({
@@ -21,8 +22,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="en-IN" className={`${inter.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col">{children}</body>
+    // next-themes sets the theme class before hydration
+    <html lang="en-IN" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
+      <body className="flex min-h-full flex-col">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

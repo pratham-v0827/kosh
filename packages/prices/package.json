@@ -1,0 +1,27 @@
+{
+  "name": "@kosh/prices",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pluggable price and FX providers, staleness rules and the refresh orchestrator (ADR-0007). Sends instrument symbols only, never user data.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./staleness": "./src/staleness.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test"
+  },
+  "dependencies": {
+    "@kosh/core": "workspace:*",
+    "decimal.js": "^10.6.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

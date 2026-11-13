@@ -32,7 +32,10 @@ firebase/emulator-data/
 packages/parsers/fixtures/_incoming/
 
 # tests
-coverage/
+# test coverage output only at package roots (BUG-011: a bare coverage/ hid an API route)
+/coverage/
+/apps/*/coverage/
+/packages/*/coverage/
 playwright-report/
 test-results/
 
@@ -47,3 +50,6 @@ Thumbs.db
 # local tool config (machine-specific paths)
 .claude/launch.json
 .claude/settings.local.json
+
+# your own Firebase project alias (copy .firebaserc.example); emulators use --project demo-kosh
+.firebaserc

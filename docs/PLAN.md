@@ -3,6 +3,8 @@
 > **Kosh** (कोश, "treasury / store of value") — *Every investment. One ledger.*
 > Open-source, multi-user investment tracker for Indian investors holding Indian + US equities, mutual funds, unlisted shares and crypto.
 >
+> **Update 2026-11-09:** owner constraint: **no paid keys or services anywhere** (paid options below are historical, not planned). Prices: ADR-0020. Self-hosting: docs/self-hosting.md.
+>
 > Status: **DRAFT — awaiting your approval.** Nothing has been scaffolded, deployed, or pushed.
 > Research date for every third-party claim: **2026-11-09** (web search). Sources are listed as `[S#]` in the appendix. Anything not confirmed from a primary source is labelled **unverified**.
 
@@ -608,6 +610,8 @@ service firebase.storage {
 
 ### 6.1 Price sources
 
+> **Update 2026-11-09 (M2):** NSE/BSE bhavcopy downloads refused automated clients, and Kosh does not work around bot protection, so Indian equities are **manual** until a permitted source is chosen. See ADR-0019 and docs/prices.md. The rest of the table stands.
+
 | Asset class | Primary | Fallback | Reliability / latency | Limits / terms | Notes |
 |---|---|---|---|---|---|
 | Indian equity (EOD) | **NSE bhavcopy** (official daily file; one download = all symbols) | **BSE bhavcopy** | Official; available after close | NSE data is subject to NSEIL Terms of Use [S21]. Redistribution terms **unverified**. We store only the closes of held instruments, per user | Covers delisted detection (symbol disappears) |
@@ -742,7 +746,7 @@ Property-based tests (fast-check):
 | `--loss` | `#B91C1C` | `#F87171` | − values, always with ▼ and "−" |
 | `--warn` | `#B45309` | `#FBBF24` | Stale data |
 | `--danger` | `#B91C1C` | `#F87171` | Destructive actions |
-| chart series | indigo, teal `#0D9488`, amber `#D97706`, sky `#0284C7`, rose `#E11D48`, slate | lightened equivalents | Asset classes (fixed mapping), validated for CVD |
+| chart series | indigo, teal `#0D9488`, amber `#D97706`, sky `#0284C7`, violet `#7C3AED` (no reds or greens, so asset colours never read as loss or gain), slate | lightened equivalents | Asset classes (fixed mapping), validated for CVD |
 
 - **Typography:** Inter (variable). `font-variant-numeric: tabular-nums` for all figures. Scale (px / line-height): 12/16, 14/20, 16/24, 18/28, 20/28, 24/32, 30/36, 36/40, 48/52 (hero net worth).
 - **Spacing:** 4-px grid (`1`=4 … `16`=64).
