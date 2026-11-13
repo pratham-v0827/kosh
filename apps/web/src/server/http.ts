@@ -16,15 +16,36 @@ export class HttpError extends Error {
 
 const MAX_JSON_BYTES = 32 * 1024;
 
+/**
+ * Read at most `max` bytes of the body, then stop (SEC-005). Content-Length can be missing or
+ * wrong (chunked uploads), so the cap is enforced while streaming rather than after buffering.
+ */
+async function readCapped(req: Request, max: number): Promise<string> {
+  if (!req.body) return '';
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => {});
+      throw new HttpError(413, 'PAYLOAD_TOO_LARGE', 'Request body too large');
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
 /** Parse and validate a JSON body. Throws HttpError(400/413/422). */
 export async function readJson<T extends z.ZodType>(req: Request, schema: T): Promise<z.infer<T>> {
   const length = Number(req.headers.get('content-length') ?? 0);
   if (length > MAX_JSON_BYTES)
     throw new HttpError(413, 'PAYLOAD_TOO_LARGE', 'Request body too large');
+  const text = await readCapped(req, MAX_JSON_BYTES);
   let body: unknown;
   try {
-    const text = await req.text();
-    if (text.length > MAX_JSON_BYTES) throw new Error('too large');
     body = JSON.parse(text);
   } catch {
     throw new HttpError(400, 'BAD_JSON', 'Request body must be valid JSON');
