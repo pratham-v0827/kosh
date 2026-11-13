@@ -10,6 +10,9 @@ allowBuilds:
   protobufjs: false # postinstall only prints a version notice
   '@firebase/util': false # postinstall only serves Firebase App Hosting auto-init
   esbuild: true # vitest/vite need the platform binary check
+  # Optional native regex engine for the Firebase *Hosting* emulator (via superstatic), which
+  # Kosh does not use; superstatic falls back to JavaScript RegExp. Only has a build step on Linux.
+  re2: false
 
 # Security overrides (docs/audits/phase3-security.md). Keep each one justified and minimal.
 overrides:
