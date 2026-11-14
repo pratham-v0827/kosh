@@ -46,6 +46,27 @@ describe('parseDecimal', () => {
     expect(canonicalDecimal('10.00')).toBe('10');
     expect(canonicalDecimal('010.50')).toBe('10.5');
     expect(canonicalDecimal('0.0')).toBe('0');
+    expect(canonicalDecimal('000')).toBe('0');
+    expect(canonicalDecimal('5.')).toBe('5');
+    expect(canonicalDecimal('0.50000')).toBe('0.5');
+  });
+
+  // CodeQL js/polynomial-redos: trimming zeros with /0+$/ took quadratic time on a long run of
+  // zeros that does not reach the end. A spreadsheet cell can be megabytes long.
+  it('stays fast on very long runs of zeros', () => {
+    const zeros = '0'.repeat(200_000);
+    const started = performance.now();
+    expect(canonicalDecimal(`1.${zeros}1`)).toBe(`1.${zeros}1`);
+    expect(canonicalDecimal(`${zeros}7.5${zeros}`)).toBe('7.5');
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('refuses absurdly long numbers before doing any work', () => {
+    const started = performance.now();
+    expect(parseDecimal(`1.${'0'.repeat(2_000_000)}1`)).toBeNull();
+    expect(parseDecimal('9'.repeat(65))).toBeNull();
+    expect(parseDecimal('1234567890123.1234567890')).toBe('1234567890123.123456789');
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 });
 

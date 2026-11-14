@@ -27,16 +27,33 @@ export function parseDate(text: string): string | null {
  * Returns null for anything else, including negatives, exponents and formulas.
  */
 export function parseDecimal(text: string): string | null {
+  // No real amount is this long; refusing early keeps a huge cell from costing any work.
+  if (text.length > MAX_NUMBER_CHARS) return null;
   const s = text.replace(/[₹$,\s]/g, '');
   if (!/^\d+(\.\d+)?$/.test(s)) return null;
   return canonicalDecimal(s);
 }
 
-/** "0010.500" → "10.5", "10.00" → "10", "0.0" → "0". Makes equal amounts compare equal. */
+/** Longest cell accepted as a number, including separators and a currency symbol. */
+const MAX_NUMBER_CHARS = 64;
+
+/**
+ * "0010.500" → "10.5", "10.00" → "10", "0.0" → "0". Makes equal amounts compare equal.
+ * Zeros are trimmed with plain loops, never a regular expression: /0+$/ takes quadratic time on a
+ * long run of zeros that does not reach the end of the string.
+ */
 export function canonicalDecimal(s: string): string {
-  const [int = '0', frac = ''] = s.split('.');
-  const i = int.replace(/^0+(?=\d)/, '');
-  const f = frac.replace(/0+$/, '');
+  const dot = s.indexOf('.');
+  const int = dot === -1 ? s : s.slice(0, dot);
+  const frac = dot === -1 ? '' : s.slice(dot + 1);
+
+  let start = 0;
+  while (start < int.length - 1 && int[start] === '0') start++;
+  let end = frac.length;
+  while (end > 0 && frac[end - 1] === '0') end--;
+
+  const i = int.slice(start) || '0';
+  const f = frac.slice(0, end);
   return f ? `${i}.${f}` : i;
 }
 
