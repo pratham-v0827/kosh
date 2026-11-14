@@ -52,7 +52,17 @@ export interface LedgerTxn {
   fxRate?: string;
   /** Tie-breaker for transactions on the same date (e.g. createdAt millis). */
   seq?: number;
+  /**
+   * How sure the trade date of a purchase is. Absent = exact. Holdings imported from a statement
+   * have no trade history: the date is the first purchase ("approximate") or just the statement
+   * date ("unknown").
+   */
+  dateQuality?: Exclude<DateQuality, 'exact'>;
 }
+
+/** How far a position's purchase dates can be trusted, from best to worst. */
+export type DateQuality = 'exact' | 'approximate' | 'unknown';
+const QUALITY_RANK: Record<DateQuality, number> = { exact: 0, approximate: 1, unknown: 2 };
 
 export interface Lot {
   date: string;
@@ -84,6 +94,8 @@ export interface Position {
   dividends: string;
   fees: string;
   firstAcquired: string | null;
+  /** The least certain purchase date among this position's lots. Date-based returns depend on it. */
+  dateQuality: DateQuality;
   lots: Lot[];
   /** INR cash flows aggregated per day, investor's view (buys negative). */
   cashflows: [date: string, amount: number][];
@@ -142,6 +154,7 @@ interface MutablePosition {
   dividends: Decimal;
   fees: Decimal;
   firstAcquired: string | null;
+  dateQuality: DateQuality;
   flows: Map<string, Decimal>;
 }
 
@@ -208,6 +221,7 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
           dividends: ZERO,
           fees: ZERO,
           firstAcquired: null,
+          dateQuality: 'exact',
           flows: new Map(),
         };
         book.set(key, p);
@@ -244,6 +258,8 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
         });
         pos.fees = pos.fees.plus(fees.times(fx));
         pos.firstAcquired ??= t.tradeDate;
+        const quality = t.dateQuality ?? 'exact';
+        if (QUALITY_RANK[quality] > QUALITY_RANK[pos.dateQuality]) pos.dateQuality = quality;
         addFlow(pos, t.tradeDate, grossInr.neg());
         break;
       }
@@ -371,6 +387,7 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
       dividends: p.dividends.toDecimalPlaces(4).toString(),
       fees: p.fees.toDecimalPlaces(4).toString(),
       firstAcquired: p.firstAcquired,
+      dateQuality: p.dateQuality,
       lots: p.lots.map((l) => ({
         date: l.date,
         qty: l.qty.toString(),

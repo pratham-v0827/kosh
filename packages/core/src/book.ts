@@ -50,7 +50,7 @@ export interface FxInfo {
   status: PriceStatus;
 }
 
-export type XirrNote = 'NO_PRICE' | 'NO_FX' | 'TOO_SHORT' | 'NOT_COMPUTABLE';
+export type XirrNote = 'NO_PRICE' | 'NO_FX' | 'TOO_SHORT' | 'NOT_COMPUTABLE' | 'NO_DATES';
 
 export interface HoldingView extends Omit<Position, 'cashflows'> {
   name: string;
@@ -184,7 +184,10 @@ export function composeBook(
     if (open && usable) {
       val = valuePosition(p, price.price, fxUsed.rate);
       dc = dayChange(p, price, fxUsed);
-      if (p.firstAcquired && daysBetween(p.firstAcquired, asOf) < MIN_XIRR_DAYS) {
+      if (p.dateQuality === 'unknown') {
+        // No purchase dates (a holdings statement): an annualised return would be invented.
+        xirrNote = 'NO_DATES';
+      } else if (p.firstAcquired && daysBetween(p.firstAcquired, asOf) < MIN_XIRR_DAYS) {
         xirrNote = 'TOO_SHORT';
       } else {
         const r = positionXirr(p, val.value, asOf);
