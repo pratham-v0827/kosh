@@ -184,3 +184,11 @@ export function fieldErrors(error: z.ZodError): Record<string, string> {
   }
   return out;
 }
+
+// ---------- imports ----------
+
+/** Confirm a previewed import. `skipLines` are file rows the user chose to leave out. */
+export const ImportConfirmInput = z.object({
+  skipLines: z.array(z.number().int().positive().max(1_000_000)).max(1000).optional(),
+});
+export type ImportConfirmInput = z.infer<typeof ImportConfirmInput>;
