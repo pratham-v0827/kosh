@@ -95,6 +95,15 @@ export async function previewImport(uid: string, input: ParserInput): Promise<Im
     throw e;
   }
 
+  if (parsed.kind !== 'transactions') {
+    // Holdings statements are parsed but not yet importable: the replace-with-diff flow is next.
+    throw new HttpError(
+      422,
+      'NOT_SUPPORTED_YET',
+      `${parsed.label} holdings statements are recognised, but importing them is not available yet`,
+    );
+  }
+
   const [activeSnap, instSnap] = await Promise.all([
     userRef.collection('transactions').where('status', '==', 'active').get(),
     userRef.collection('instruments').select().get(),
