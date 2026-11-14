@@ -5,6 +5,26 @@ Parsers are versioned independently (e.g. `zerodha.tradebook@1.0.0`).
 
 ## [Unreleased]
 
+### Added
+
+- M3 import framework:
+  - `@kosh/parsers`: parser interface and registry (detect → parse → normalise, in memory only),
+    fingerprint de-duplication, and the first format, the Kosh CSV template (`kosh.csv@1`)
+  - Import page: upload, preview with New / Already imported / Needs attention, untick rows,
+    confirm, import history with undo
+  - API: `POST /api/v1/imports` (preview), `POST /api/v1/imports/:id/confirm`,
+    `DELETE /api/v1/imports/:id` (discard or undo)
+  - Importing the same statement twice adds nothing; identical rows inside one file are kept
+  - Limits: 4 MB and 450 rows per file, 30 uploads and 2,000 imported rows per user per day
+  - Fixture tooling: `pnpm fixture:redact`, `pnpm check:pii`, optional pre-commit hook
+    (`pnpm hooks:install`); docs/parsers/kosh-csv.md and docs/guides/adding-a-parser.md
+
+### Fixed
+
+- Dates with an impossible month (for example `2025-14-03`) were accepted as valid (BUG-013)
+
+## [0.2.0] - 2026-11-14
+
 ### Security
 
 - Security audit (docs/audits/phase3-security.md): 13 findings fixed, each with a test
