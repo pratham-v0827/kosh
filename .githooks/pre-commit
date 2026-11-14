@@ -1,0 +1,7 @@
+#!/bin/sh
+# Blocks a commit when a parser fixture contains something that looks like personal data
+# (PAN, email, phone, demat id, ...). Install once with: pnpm hooks:install
+# The same check runs in CI through the test suite, so this hook is a convenience, not the gate.
+changed=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(packages/parsers/fixtures/|apps/web/public/templates/)' || true)
+[ -z "$changed" ] && exit 0
+exec node packages/parsers/scripts/check-pii.mjs

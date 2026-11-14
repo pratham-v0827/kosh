@@ -10,7 +10,7 @@
   can ask Claude about your own portfolio.
 </p>
 
-> **Status: pre-alpha (Milestone 2).** Sign-in, manual holdings, live prices for mutual funds (AMFI) and crypto (CoinDCX), USD holdings with FX, refresh snapshots and "Last refreshed" work locally. Indian stock prices are manual for now ([why](docs/prices.md#why-indian-stocks-are-manual-for-now)). Imports come next.
+> **Status: pre-alpha (Milestone 3 in progress).** Sign-in, manual holdings, free prices for Indian and US stocks, mutual funds and crypto ([sources](docs/prices.md)), USD holdings with FX, refresh snapshots and "Last refreshed" work. File import works with the [Kosh CSV template](docs/parsers/kosh-csv.md) (preview, duplicate detection, undo); broker and CAS statement formats are being added one at a time.
 > See the [roadmap](docs/PLAN.md#12-roadmap--milestones).
 
 > **Disclaimer:** Kosh is **not investment advice** and is **not affiliated with** Zerodha, Groww,

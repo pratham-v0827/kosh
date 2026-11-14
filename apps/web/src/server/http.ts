@@ -21,7 +21,12 @@ const MAX_JSON_BYTES = 32 * 1024;
  * wrong (chunked uploads), so the cap is enforced while streaming rather than after buffering.
  */
 async function readCapped(req: Request, max: number): Promise<string> {
-  if (!req.body) return '';
+  return new TextDecoder().decode(await readBytesCapped(req, max));
+}
+
+/** As readCapped, for binary bodies. */
+export async function readBytesCapped(req: Request, max: number): Promise<Uint8Array<ArrayBuffer>> {
+  if (!req.body) return new Uint8Array();
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -35,7 +40,57 @@ async function readCapped(req: Request, max: number): Promise<string> {
     }
     chunks.push(value);
   }
-  return new TextDecoder().decode(Buffer.concat(chunks));
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
+}
+
+export interface Upload {
+  /** File contents. The caller should zero this (`bytes.fill(0)`) once done. */
+  bytes: Uint8Array;
+  fileName: string;
+  mime: string;
+  password?: string;
+}
+
+/**
+ * Read one uploaded file from a multipart form (field "file", optional field "password").
+ * The whole body is capped while streaming, then parsed in memory; nothing touches the disk.
+ * Throws HttpError(400/413/415).
+ */
+export async function readUpload(req: Request, maxFileBytes: number): Promise<Upload> {
+  const contentType = req.headers.get('content-type') ?? '';
+  if (!/^multipart\/form-data;/i.test(contentType)) {
+    throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Send the file as multipart/form-data');
+  }
+  // Allow a little room for the multipart envelope and the password field.
+  const body = await readBytesCapped(req, maxFileBytes + 16 * 1024);
+  let form: FormData;
+  try {
+    form = await new Response(body, { headers: { 'content-type': contentType } }).formData();
+  } catch {
+    throw new HttpError(400, 'BAD_UPLOAD', 'The upload could not be read');
+  } finally {
+    body.fill(0);
+  }
+  const file = form.get('file');
+  if (!(file instanceof File)) throw new HttpError(400, 'BAD_UPLOAD', 'Attach a file to import');
+  if (file.size > maxFileBytes) {
+    throw new HttpError(413, 'PAYLOAD_TOO_LARGE', 'The file is larger than 4 MB');
+  }
+  const password = form.get('password');
+  return {
+    bytes: new Uint8Array(await file.arrayBuffer()),
+    fileName: file.name.slice(0, 200),
+    mime: file.type.slice(0, 100),
+    ...(typeof password === 'string' && password !== ''
+      ? { password: password.slice(0, 200) }
+      : {}),
+  };
 }
 
 /** Parse and validate a JSON body. Throws HttpError(400/413/422). */

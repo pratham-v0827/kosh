@@ -25,7 +25,10 @@
     "check-env": "node scripts/check-env.mjs",
     "admin:grant": "pnpm --filter @kosh/web exec node scripts/grant-admin.mjs",
     "firebase:deploy-rules": "firebase deploy --only firestore:rules,firestore:indexes",
-    "audit": "pnpm audit --audit-level high"
+    "audit": "pnpm audit --audit-level high",
+    "fixture:redact": "node packages/parsers/scripts/redact.mjs",
+    "check:pii": "node packages/parsers/scripts/check-pii.mjs",
+    "hooks:install": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

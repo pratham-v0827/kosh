@@ -17,6 +17,10 @@ const nodeGlobals = Object.fromEntries(
     'Intl',
     'Response',
     'Request',
+    'FormData',
+    'Blob',
+    'TextEncoder',
+    'TextDecoder',
   ].map((name) => [name, 'readonly']),
 );
 

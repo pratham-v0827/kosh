@@ -664,5 +664,182 @@ check(
   JSON.stringify(errBody.body),
 );
 
+// =================== M3: statement imports (preview → confirm → undo) ===================
+console.log('\n— M3 imports —');
+const { readFileSync } = await import('node:fs');
+const sampleCsv = readFileSync(
+  new URL('../packages/parsers/fixtures/kosh-csv/sample.csv', import.meta.url),
+);
+const upload = async (token, bytes, fileName = 'statement.csv', extra = {}) => {
+  const form = new FormData();
+  form.set('file', new Blob([bytes], { type: 'text/csv' }), fileName);
+  for (const [k, v] of Object.entries(extra)) form.set(k, v);
+  const r = await fetch(`${BASE}/api/v1/imports`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  return { status: r.status, body: await r.json().catch(() => null) };
+};
+
+const gina = await emulatorUser();
+const hank = await emulatorUser();
+await call(gina.token, 'POST', '/api/v1/session');
+await call(hank.token, 'POST', '/api/v1/session');
+
+const formats = await call(gina.token, 'GET', '/api/v1/imports');
+check(
+  'supported formats listed (kosh.csv)',
+  formats.status === 200 && formats.body?.formats?.some((f) => f.id === 'kosh.csv'),
+  JSON.stringify(formats.body)?.slice(0, 200),
+);
+check('import upload without a token → 401', (await upload('garbage', sampleCsv)).status === 401);
+
+const unknown = await upload(gina.token, Buffer.from('hello,world\n1,2\n'));
+check(
+  'unknown file → 422 UNKNOWN_FORMAT listing supported formats',
+  unknown.status === 422 &&
+    unknown.body?.error?.code === 'UNKNOWN_FORMAT' &&
+    unknown.body?.error?.details?.supported?.length >= 1,
+  JSON.stringify(unknown.body)?.slice(0, 200),
+);
+
+const SECRET = 'Sm0ke-Pdf-Passw0rd';
+const prev = await upload(gina.token, sampleCsv, 'holder-A-Person-AB1234.csv', {
+  password: SECRET,
+});
+check(
+  'upload → 201 preview: 9 new, 0 duplicate, 5 new holdings',
+  prev.status === 201 &&
+    prev.body?.counts?.new === 9 &&
+    prev.body?.counts?.duplicate === 0 &&
+    prev.body?.counts?.newHoldings === 5 &&
+    prev.body?.parser === 'kosh.csv@1.0.0',
+  JSON.stringify(prev.body?.counts ?? prev.body),
+);
+const importId = prev.body?.importId;
+const draftDoc = await readDoc(`users/${gina.uid}/imports/${importId}`);
+const draftJson = JSON.stringify(draftDoc ?? {});
+check(
+  'draft stores neither the password nor the file name',
+  str(field(draftDoc, 'status')) === 'draft' &&
+    !draftJson.includes(SECRET) &&
+    !draftJson.includes('A-Person') &&
+    !draftJson.includes('AB1234'),
+);
+check(
+  'nothing reaches the ledger before confirm',
+  (await readDoc(`users/${gina.uid}/book/current`)) === null,
+);
+
+check(
+  "another user cannot confirm or discard someone's import → 404",
+  (await call(hank.token, 'POST', `/api/v1/imports/${importId}/confirm`, {})).status === 404 &&
+    (await call(hank.token, 'DELETE', `/api/v1/imports/${importId}`)).status === 404,
+);
+
+const conf = await call(gina.token, 'POST', `/api/v1/imports/${importId}/confirm`, {});
+check(
+  'confirm → 200, 9 rows added',
+  conf.status === 200 && conf.body?.added === 9 && conf.body?.skippedDuplicates === 0,
+  JSON.stringify(conf.body),
+);
+const gbook = await readDoc(`users/${gina.uid}/book/current`);
+// Reliance: buy 10 → split 1:2 = 20 → sell 4 = 16
+check(
+  'book after import: Reliance 16 units, 5 holdings',
+  str(field(gbook, 'holdings', 'import:kosh|IN_EQUITY:RELIANCE', 'qty')) === '16' &&
+    str(field(gbook, 'totals', 'holdingsCount')) === '5',
+  JSON.stringify(field(gbook, 'totals'))?.slice(0, 200),
+);
+check(
+  'identical rows in one file are both kept (two equal SIP buys = 50.246 units)',
+  str(field(gbook, 'holdings', 'import:kosh|MUTUAL_FUND:120590', 'qty')) === '50.246',
+  JSON.stringify(field(gbook, 'holdings', 'import:kosh|MUTUAL_FUND:120590', 'qty')),
+);
+const doneDoc = await readDoc(`users/${gina.uid}/imports/${importId}`);
+check(
+  'import record: confirmed, rows dropped, counts kept',
+  str(field(doneDoc, 'status')) === 'confirmed' &&
+    !('rows' in (doneDoc?.fields ?? {})) &&
+    str(field(doneDoc, 'added')) === '9',
+  JSON.stringify(Object.keys(doneDoc?.fields ?? {})),
+);
+check(
+  'confirming twice → 409',
+  (await call(gina.token, 'POST', `/api/v1/imports/${importId}/confirm`, {})).status === 409,
+);
+
+// --- de-duplication: the same statement again adds nothing ---
+const again = await upload(gina.token, sampleCsv);
+check(
+  're-upload of the same file → 0 new, 9 duplicate',
+  again.status === 201 && again.body?.counts?.new === 0 && again.body?.counts?.duplicate === 9,
+  JSON.stringify(again.body?.counts ?? again.body),
+);
+const againConfirm = await call(
+  gina.token,
+  'POST',
+  `/api/v1/imports/${again.body?.importId}/confirm`,
+  {},
+);
+check(
+  'confirming a file with nothing new → 422 NOTHING_TO_IMPORT',
+  againConfirm.status === 422 && againConfirm.body?.error?.code === 'NOTHING_TO_IMPORT',
+  JSON.stringify(againConfirm.body),
+);
+check(
+  'discard a draft → 200',
+  (await call(gina.token, 'DELETE', `/api/v1/imports/${again.body?.importId}`)).body?.discarded ===
+    true && (await readDoc(`users/${gina.uid}/imports/${again.body?.importId}`)) === null,
+);
+
+// --- imported rows are managed by their import ---
+const importedRow = prev.body?.rows?.[0];
+const gTxns = await fetch(
+  `http://${FS}/v1/projects/${PROJECT}/databases/(default)/documents/users/${gina.uid}/transactions?pageSize=50`,
+  { headers: { Authorization: 'Bearer owner' } },
+).then((r) => r.json());
+const importedDoc = gTxns.documents?.find(
+  (d) => d.fields?.fingerprint?.stringValue === importedRow?.fingerprint,
+);
+const importedTxnId = importedDoc?.name?.split('/').pop();
+check(
+  'imported transaction carries source, fingerprint, import id and parser',
+  importedDoc?.fields?.source?.stringValue === 'import' &&
+    importedDoc?.fields?.importId?.stringValue === importId &&
+    importedDoc?.fields?.parser?.stringValue === 'kosh.csv@1.0.0' &&
+    importedDoc?.fields?.accountId?.stringValue === 'import:kosh',
+  JSON.stringify(importedDoc?.fields)?.slice(0, 300),
+);
+check(
+  'deleting an imported transaction directly → 409 NOT_EDITABLE',
+  (await call(gina.token, 'DELETE', `/api/v1/transactions/${importedTxnId}`)).status === 409,
+);
+
+// --- undo ---
+const undo = await call(gina.token, 'DELETE', `/api/v1/imports/${importId}`);
+const gbook2 = await readDoc(`users/${gina.uid}/book/current`);
+check(
+  'undo → 9 transactions voided, book empty, history kept',
+  undo.status === 200 &&
+    undo.body?.voided === 9 &&
+    str(field(gbook2, 'totals', 'holdingsCount')) === '0' &&
+    str(field(await readDoc(`users/${gina.uid}/imports/${importId}`), 'status')) === 'undone' &&
+    str(field(await readDoc(`users/${gina.uid}/transactions/${importedTxnId}`), 'status')) ===
+      'void',
+  JSON.stringify(undo.body),
+);
+check(
+  'undoing twice → 409',
+  (await call(gina.token, 'DELETE', `/api/v1/imports/${importId}`)).status === 409,
+);
+const afterUndo = await upload(gina.token, sampleCsv);
+check(
+  'after an undo the same file is importable again (9 new)',
+  afterUndo.body?.counts?.new === 9 && afterUndo.body?.counts?.duplicate === 0,
+  JSON.stringify(afterUndo.body?.counts ?? afterUndo.body),
+);
+
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll API smoke checks passed');
 process.exit(failures ? 1 : 0);

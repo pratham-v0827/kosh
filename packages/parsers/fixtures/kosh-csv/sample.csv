@@ -1,0 +1,10 @@
+date,type,asset_class,name,symbol,exchange,quantity,price,fees,amount,ratio,fx_rate,reference,note
+2024-04-01,buy,in_equity,Reliance Industries,RELIANCE,NSE,10,2900.50,15.20,,,,ORD-1001,First lot
+2024-04-15,buy,mutual_fund,ICICI Prudential Gilt Fund - Direct Growth,120590,,25.123,95.5,,,,,,SIP
+2024-04-15,buy,mutual_fund,ICICI Prudential Gilt Fund - Direct Growth,120590,,25.123,95.5,,,,,,SIP
+14-06-2024,buy,us_equity,Apple Inc.,AAPL,,5,190.25,1,,,83.45,,
+2024-07-01,dividend,in_equity,Reliance Industries,RELIANCE,NSE,,,,100,,,,
+2024-08-01,split,in_equity,Reliance Industries,RELIANCE,NSE,,,,,1:2,,,
+2024-09-10,sell,in_equity,Reliance Industries,RELIANCE,NSE,4,"1,520.00",12,,,,ORD-1042,
+2024-10-01,buy,crypto,Bitcoin,BTC,,0.00012345,5500000,,,,,,
+2024-11-05,buy,unlisted,"Acme Technologies (pre-IPO), Series A",,,100,310,,,,,,

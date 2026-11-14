@@ -11,7 +11,7 @@ import {
   type LedgerTxn,
   type PriceInfo,
 } from '@kosh/core';
-import type { InstrumentInput, TransactionInput } from '@kosh/contracts';
+import type { TransactionInput } from '@kosh/contracts';
 import {
   type DocumentReference,
   FieldValue,
@@ -20,7 +20,14 @@ import {
 } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
 import { HttpError } from './http';
-import { appendHistory, assertLedgerSize, nextWriteCounters, type WriteCounters } from './limits';
+import {
+  appendHistory,
+  assertLedgerSize,
+  type ImportRowCounters,
+  nextImportRowCounters,
+  nextWriteCounters,
+  type WriteCounters,
+} from './limits';
 import { fxOnDate, manualToPriceInfo, quoteToPriceInfo, readMarket } from './market';
 
 /**
@@ -35,14 +42,26 @@ export const MANUAL_ACCOUNT = 'manual';
 type TxnStatus = 'active' | 'void' | 'replaced';
 export type RefreshTrigger = 'manual' | 'scheduled' | 'import' | 'mcp';
 
-interface TxnDoc extends Omit<LedgerTxn, 'id'> {
+/** Where an imported transaction came from. Lets a re-import be recognised and an import undone. */
+export interface ImportMeta {
+  /** De-duplication key (see @kosh/parsers fingerprint). */
+  fingerprint: string;
+  importId: string;
+  /** "kosh.csv@1.0.0" */
+  parser: string;
+  brokerRef?: string;
+}
+
+interface TxnDoc extends Omit<LedgerTxn, 'id'>, Partial<ImportMeta> {
   status: TxnStatus;
-  source: 'manual';
+  source: 'manual' | 'import';
   note?: string;
   createdAt: FieldValue;
   replacedBy?: string;
   voidedAt?: FieldValue;
 }
+
+export type ImportStatus = 'draft' | 'confirmed' | 'undone';
 
 interface InstrumentDoc {
   name: string;
@@ -56,21 +75,7 @@ interface InstrumentDoc {
 export const istToday = (d = new Date()) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
 
-const slug = (s: string) =>
-  s
-    .normalize('NFKD')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60) || 'holding';
-
-/** NSE (the default) keeps the short id; BSE listings get their own id so both can coexist. */
-export function instrumentIdFor(input: InstrumentInput): string {
-  const key = input.symbol ?? slug(input.name);
-  return input.assetClass === 'IN_EQUITY' && input.exchange === 'BSE'
-    ? `IN_EQUITY:BSE:${key}`
-    : `${input.assetClass}:${key}`;
-}
+export { instrumentIdFor } from './instrument-id';
 
 /** Manual-refresh limits (docs/PLAN.md §6.2). Scheduled refreshes are exempt. */
 export const REFRESH_COOLDOWN_MS = 5 * 60_000;
@@ -154,9 +159,18 @@ function describe(error: LedgerError): string {
 }
 
 export interface LedgerChange {
-  add?: { fields: Omit<LedgerTxn, 'id' | 'seq'>; note?: string }[];
+  /** `importMeta` marks a row from a statement: rows whose fingerprint is already active are skipped. */
+  add?: { fields: Omit<LedgerTxn, 'id' | 'seq'>; note?: string; importMeta?: ImportMeta }[];
   /** Transactions to retire. `replacedBy` is the index into `add` of the replacement, if any. */
   retire?: { id: string; status: Exclude<TxnStatus, 'active'>; replacedBy?: number }[];
+  /** Source accounts to create or refresh (imports). The manual account is created on demand. */
+  accounts?: { id: string; source: string; label: string }[];
+  /**
+   * Finish an import in the same transaction as the ledger write:
+   *  - confirm: the draft must still be a live draft; it becomes "confirmed" with final counts.
+   *  - undo: every active transaction of that import is voided; it becomes "undone".
+   */
+  importDoc?: { id: string; action: 'confirm' | 'undo' };
   instruments?: InstrumentMeta[];
   /** Manual prices in the instrument's currency. */
   manualPrices?: Record<string, { price: string; asOf: string }>;
@@ -170,6 +184,10 @@ export interface LedgerResult {
   snapshotId?: string;
   totals: ComposedBook['totals'];
   skipped?: 'ALREADY_SNAPSHOTTED_TODAY' | 'NO_HOLDINGS';
+  /** Imported rows not added because the same row is already in the ledger. */
+  duplicates?: number;
+  /** Transactions voided by an import undo. */
+  voided?: number;
 }
 
 export interface BookLastRefresh {
@@ -193,14 +211,35 @@ export async function applyLedgerChange(
 
   return db.runTransaction(async (tx: Transaction) => {
     // ---------- reads (all before writes) ----------
-    const [activeSnap, instSnap, priceSnap, bookSnap, accountSnap, metaSnap] = await Promise.all([
-      tx.get(txCol.where('status', '==', 'active')),
-      tx.get(userRef.collection('instruments')),
-      tx.get(userRef.collection('manualPrices')),
-      tx.get(bookRef),
-      tx.get(accountRef),
-      tx.get(metaRef),
-    ]);
+    const importRef = change.importDoc
+      ? userRef.collection('imports').doc(change.importDoc.id)
+      : null;
+    const [activeSnap, instSnap, priceSnap, bookSnap, accountSnap, metaSnap, importSnap] =
+      await Promise.all([
+        tx.get(txCol.where('status', '==', 'active')),
+        tx.get(userRef.collection('instruments')),
+        tx.get(userRef.collection('manualPrices')),
+        tx.get(bookRef),
+        tx.get(accountRef),
+        tx.get(metaRef),
+        importRef ? tx.get(importRef) : Promise.resolve(null),
+      ]);
+
+    // An import is finished exactly once: two confirms (or a confirm racing an undo) cannot both win.
+    if (change.importDoc) {
+      const status = importSnap?.get('status') as ImportStatus | undefined;
+      if (!importSnap?.exists) throw new HttpError(404, 'NOT_FOUND', 'Import not found');
+      if (change.importDoc.action === 'confirm') {
+        if (status !== 'draft')
+          throw new HttpError(409, 'IMPORT_NOT_DRAFT', 'This import was already confirmed');
+        const expires = importSnap.get('expiresAt') as { toDate?: () => Date } | undefined;
+        if (expires?.toDate && expires.toDate().getTime() < now.getTime()) {
+          throw new HttpError(410, 'IMPORT_EXPIRED', 'This preview expired. Upload the file again');
+        }
+      } else if (status !== 'confirmed') {
+        throw new HttpError(409, 'IMPORT_NOT_CONFIRMED', 'Only a confirmed import can be undone');
+      }
+    }
 
     const trigger = change.snapshot?.trigger;
     if (trigger === 'scheduled' && bookSnap.get('lastScheduledDay') === today) {
@@ -218,6 +257,7 @@ export async function applyLedgerChange(
       !trigger &&
       ((change.add?.length ?? 0) > 0 ||
         (change.retire?.length ?? 0) > 0 ||
+        change.importDoc !== undefined ||
         (change.instruments?.length ?? 0) > 0 ||
         Object.keys(change.manualPrices ?? {}).length > 0);
     const writeCounters = isEdit
@@ -242,9 +282,38 @@ export async function applyLedgerChange(
       active.delete(r.id);
     }
 
+    // Undo an import: void everything it added that is still active.
+    const undoIds =
+      change.importDoc?.action === 'undo'
+        ? activeSnap.docs.filter((d) => d.get('importId') === change.importDoc!.id).map((d) => d.id)
+        : [];
+    for (const id of undoIds) active.delete(id);
+
+    // Imported rows already in the ledger (same fingerprint, still active) are skipped, so
+    // importing the same statement twice adds nothing.
+    const knownFingerprints = new Set<string>();
+    for (const d of activeSnap.docs) {
+      const f = d.get('fingerprint') as string | undefined;
+      if (f && !undoIds.includes(d.id)) knownFingerprints.add(f);
+    }
+    let duplicates = 0;
+    const adds = (change.add ?? []).filter((a) => {
+      const f = a.importMeta?.fingerprint;
+      if (!f) return true;
+      if (knownFingerprints.has(f)) {
+        duplicates++;
+        return false;
+      }
+      knownFingerprints.add(f);
+      return true;
+    });
+    if (duplicates > 0 && (change.retire ?? []).some((r) => r.replacedBy !== undefined)) {
+      throw new Error('replacedBy cannot be combined with de-duplicated adds');
+    }
+
     const seqBase = Date.now();
-    const newRefs: DocumentReference[] = (change.add ?? []).map(() => txCol.doc());
-    (change.add ?? []).forEach((a, i) => {
+    const newRefs: DocumentReference[] = adds.map(() => txCol.doc());
+    adds.forEach((a, i) => {
       active.set(newRefs[i]!.id, { ...a.fields, id: newRefs[i]!.id, seq: seqBase + i });
     });
 
@@ -261,7 +330,7 @@ export async function applyLedgerChange(
     for (const id of Object.keys(change.manualPrices ?? {})) {
       if (!instruments[id]) throw new HttpError(404, 'NOT_FOUND', 'Unknown holding');
     }
-    if ((change.add?.length ?? 0) > 0 || (change.instruments?.length ?? 0) > 0) {
+    if (adds.length > 0 || (change.instruments?.length ?? 0) > 0) {
       assertLedgerSize(active.size, Object.keys(instruments).length);
     }
 
@@ -305,7 +374,7 @@ export async function applyLedgerChange(
 
     // ---------- writes ----------
     const ts = FieldValue.serverTimestamp();
-    if (!accountSnap.exists && (change.add?.length ?? 0) > 0) {
+    if (!accountSnap.exists && adds.some((a) => a.fields.accountId === MANUAL_ACCOUNT)) {
       tx.set(accountRef, {
         source: 'manual',
         label: 'Manual',
@@ -313,6 +382,13 @@ export async function applyLedgerChange(
         status: 'ok',
         createdAt: ts,
       });
+    }
+    for (const a of change.accounts ?? []) {
+      tx.set(
+        userRef.collection('accounts').doc(a.id),
+        { source: a.source, label: a.label, method: 'import', status: 'ok', updatedAt: ts },
+        { merge: true },
+      );
     }
     for (const i of change.instruments ?? []) {
       if (!instSnap.docs.some((d) => d.id === i.id)) {
@@ -355,17 +431,48 @@ export async function applyLedgerChange(
       );
     }
     if (writeCounters) tx.set(metaRef, writeCounters, { merge: true });
-    (change.add ?? []).forEach((a, i) => {
+    if (change.importDoc?.action === 'confirm') {
+      // Imported rows per user per day are capped: each row is a Firestore write.
+      tx.set(
+        metaRef,
+        nextImportRowCounters(
+          metaSnap.data() as Partial<ImportRowCounters> | undefined,
+          today,
+          adds.length,
+        ),
+        { merge: true },
+      );
+    }
+    adds.forEach((a, i) => {
       const doc: TxnDoc = {
         ...a.fields,
         seq: seqBase + i,
         status: 'active',
-        source: 'manual',
+        source: a.importMeta ? 'import' : 'manual',
         createdAt: ts,
         ...(a.note ? { note: a.note } : {}),
+        ...(a.importMeta ?? {}),
       };
       tx.set(newRefs[i]!, doc);
     });
+    for (const id of undoIds) tx.update(txCol.doc(id), { status: 'void', voidedAt: ts });
+    if (importRef && change.importDoc) {
+      tx.set(
+        importRef,
+        change.importDoc.action === 'confirm'
+          ? {
+              status: 'confirmed' satisfies ImportStatus,
+              confirmedAt: ts,
+              added: adds.length,
+              skippedDuplicates: duplicates,
+              // the draft rows are no longer needed once they are in the ledger
+              rows: FieldValue.delete(),
+              expiresAt: FieldValue.delete(),
+            }
+          : { status: 'undone' satisfies ImportStatus, undoneAt: ts, voided: undoIds.length },
+        { merge: true },
+      );
+    }
     for (const r of change.retire ?? []) {
       tx.update(txCol.doc(r.id), {
         status: r.status,
@@ -438,6 +545,8 @@ export async function applyLedgerChange(
       bookVersion: version,
       totals: composed.totals,
       ...(snapshotId ? { snapshotId } : {}),
+      ...(change.importDoc?.action === 'confirm' ? { duplicates } : {}),
+      ...(change.importDoc?.action === 'undo' ? { voided: undoIds.length } : {}),
     };
   });
 }
