@@ -5,6 +5,10 @@ export type ImportErrorCode =
   | 'NOT_TEXT'
   | 'MISSING_COLUMNS'
   | 'TOO_MANY_ROWS'
+  | 'CORRUPT_FILE'
+  | 'ENCRYPTED_FILE'
+  | 'UNSUPPORTED_FILE'
+  | 'NO_HOLDINGS'
   | 'PARSER_FAILED';
 
 /**
