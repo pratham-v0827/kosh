@@ -283,6 +283,7 @@ describe('bulk access and client-writable fields (SEC-012)', () => {
       'metrics/daily_2026-11-09',
       'rateLimits/x',
       'oauthTokens/x',
+      'isinMap/INE002A01018', // shared ISIN → ticker cache: written by the server only
     ]) {
       await assertFails(alice().doc(path).get());
       await assertFails(alice().doc(path).set({ x: 1 }));

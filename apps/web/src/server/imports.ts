@@ -7,6 +7,7 @@ import {
   type RowIssue,
   runImport,
 } from '@kosh/parsers';
+import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
 import { HttpError } from './http';
@@ -25,6 +26,14 @@ import {
   nextImportPreviewCounters,
 } from './limits';
 import { fxOnDate } from './market';
+import {
+  type AlreadyImported,
+  confirmStatement,
+  previewStatement,
+  type StatementConfirmOptions,
+  type StatementDraftDoc,
+  type StatementPreview,
+} from './statement-imports';
 
 /**
  * Statement imports (docs/PLAN.md §4.2): preview → confirm.
@@ -48,6 +57,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 export interface ImportPreview {
+  kind: 'transactions';
   importId: string;
   parser: string;
   source: string;
@@ -59,6 +69,8 @@ export interface ImportPreview {
 }
 
 interface ImportDoc {
+  /** Absent on drafts written before holdings statements existed. */
+  kind?: 'transactions';
   status: ImportStatus;
   parser: string;
   source: string;
@@ -72,7 +84,10 @@ interface ImportDoc {
 const STATUS_FOR: Partial<Record<ImportError['code'], number>> = { FILE_TOO_LARGE: 413 };
 
 /** Parse a file and store a draft import. The caller must zero `input.bytes` afterwards. */
-export async function previewImport(uid: string, input: ParserInput): Promise<ImportPreview> {
+export async function previewImport(
+  uid: string,
+  input: ParserInput,
+): Promise<ImportPreview | StatementPreview | AlreadyImported> {
   const db = adminDb();
   const userRef = db.doc(`users/${uid}`);
   const metaRef = db.doc(`userMeta/${uid}`);
@@ -95,13 +110,10 @@ export async function previewImport(uid: string, input: ParserInput): Promise<Im
     throw e;
   }
 
-  if (parsed.kind !== 'transactions') {
-    // Holdings statements are parsed but not yet importable: the replace-with-diff flow is next.
-    throw new HttpError(
-      422,
-      'NOT_SUPPORTED_YET',
-      `${parsed.label} holdings statements are recognised, but importing them is not available yet`,
-    );
+  if (parsed.kind === 'positions') {
+    // Only the SHA-256 of the file is kept, to recognise the same statement if it is uploaded again.
+    const fileHash = createHash('sha256').update(input.bytes).digest('hex');
+    return previewStatement(uid, parsed, fileHash, now);
   }
 
   const [activeSnap, instSnap] = await Promise.all([
@@ -142,6 +154,7 @@ export async function previewImport(uid: string, input: ParserInput): Promise<Im
   const ref = userRef.collection('imports').doc();
   const expiresAt = new Date(now.getTime() + DRAFT_TTL_MS);
   const doc: ImportDoc = {
+    kind: 'transactions',
     status: 'draft',
     parser: parsed.parser,
     source: parsed.source,
@@ -158,6 +171,7 @@ export async function previewImport(uid: string, input: ParserInput): Promise<Im
   await batch.commit();
 
   return {
+    kind: 'transactions',
     importId: ref.id,
     parser: doc.parser,
     source: doc.source,
@@ -172,16 +186,27 @@ export async function previewImport(uid: string, input: ParserInput): Promise<Im
 async function readImport(uid: string, importId: string) {
   const snap = await adminDb().doc(`users/${uid}/imports/${importId}`).get();
   if (!snap.exists) throw new HttpError(404, 'NOT_FOUND', 'Import not found');
-  return snap.data() as ImportDoc;
+  return snap.data() as ImportDoc | StatementDraftDoc;
 }
 
-/** Add a draft's new rows to the ledger. `skipLines` are rows the user unticked in the preview. */
-export async function confirmImport(uid: string, importId: string, skipLines: number[] = []) {
+export interface ConfirmOptions extends StatementConfirmOptions {
+  /** Transaction files: rows the user unticked in the preview. */
+  skipLines?: number[];
+}
+
+/** Apply a draft to the ledger. */
+export async function confirmImport(uid: string, importId: string, options: ConfirmOptions = {}) {
   const draft = await readImport(uid, importId);
   if (draft.status !== 'draft') {
     throw new HttpError(409, 'IMPORT_NOT_DRAFT', 'This import was already confirmed');
   }
-  const skip = new Set(skipLines);
+  if (draft.kind === 'positions') {
+    return {
+      kind: 'positions' as const,
+      ...(await confirmStatement(uid, importId, draft, options)),
+    };
+  }
+  const skip = new Set(options.skipLines ?? []);
   const rows = (draft.rows ?? []).filter((r) => r.status === 'new' && !skip.has(r.line));
   if (rows.length === 0) {
     throw new HttpError(422, 'NOTHING_TO_IMPORT', 'There are no new rows to import');
@@ -222,6 +247,7 @@ export async function confirmImport(uid: string, importId: string, skipLines: nu
     importDoc: { id: importId, action: 'confirm' },
   });
   return {
+    kind: 'transactions' as const,
     added: result.addedIds.length,
     skippedDuplicates: result.duplicates ?? 0,
     bookVersion: result.bookVersion,
