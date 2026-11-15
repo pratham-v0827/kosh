@@ -1,6 +1,6 @@
 # M3 Phase 1 — parser spec for Groww and INDmoney holdings exports
 
-**Status: draft, awaiting the owner's approval. No parser code exists yet.**
+**Status: approved by the owner on 2026-11-14 and implemented.** User-facing notes are in [groww-holdings.md](groww-holdings.md) and [indmoney-us-holdings.md](indmoney-us-holdings.md).
 
 Written from two real exports inspected read-only on the owner's machine with every value masked.
 This document contains structure only: no names, ids, holdings, quantities or amounts from those
