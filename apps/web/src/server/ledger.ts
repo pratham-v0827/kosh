@@ -179,6 +179,11 @@ export interface LedgerChange {
    */
   retireImported?: string[];
   /**
+   * BUG-018: transactions that must still be active, each under the given instrument, or the
+   * change is refused as out of date (a statement preview's view of the ledger).
+   */
+  requireActive?: { txnId: string; instrumentId: string }[];
+  /**
    * Move a holding to another instrument identity: an ISIN-only holding that now has a ticker.
    * Every active transaction of `from` moves to `to`, together with its manual price.
    */
@@ -307,6 +312,16 @@ export async function applyLedgerChange(
         : [];
     for (const id of undoIds) active.delete(id);
 
+    for (const { txnId, instrumentId } of change.requireActive ?? []) {
+      if (active.get(txnId)?.instrumentId !== instrumentId) {
+        throw new HttpError(
+          409,
+          'IMPORT_OUT_OF_DATE',
+          'Your holdings changed since this preview. Upload the file again',
+        );
+      }
+    }
+
     // A newer statement replaces the broker's earlier statement lots.
     for (const id of change.retireImported ?? []) {
       const existing = active.get(id);
@@ -332,6 +347,24 @@ export async function applyLedgerChange(
         active.set(id, { ...t, instrumentId: change.rekey.to.id });
       }
       if (rekeyIds.length === 0) throw new HttpError(404, 'NOT_FOUND', 'Holding not found');
+      // BUG-020: a statement account holds one lot per share; a second would never be replaced.
+      const moved = new Set(rekeyIds);
+      const movedAccounts = new Set(
+        rekeyIds.map((id) => active.get(id)!.accountId).filter((a) => a !== MANUAL_ACCOUNT),
+      );
+      for (const [id, t] of active) {
+        if (
+          !moved.has(id) &&
+          t.instrumentId === change.rekey.to.id &&
+          movedAccounts.has(t.accountId)
+        ) {
+          throw new HttpError(
+            409,
+            'ALREADY_HELD',
+            `This account already holds ${change.rekey.to.symbol ?? 'that share'} in another row. Check the ticker`,
+          );
+        }
+      }
     }
 
     // Imported rows already in the ledger (same fingerprint, still active) are skipped, so

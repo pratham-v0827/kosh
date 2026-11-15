@@ -1101,6 +1101,12 @@ check(
   "another user cannot map someone's holding → 404",
   (await call(jack.token, 'PUT', mapPath, { symbol: 'ZZTESTB' })).status === 404,
 );
+const clash = await call(kim.token, 'PUT', mapPath, { symbol: 'ZZTESTA' });
+check(
+  'mapping onto a ticker the same account already holds → 409 ALREADY_HELD (BUG-020)',
+  clash.status === 409 && clash.body?.error?.code === 'ALREADY_HELD',
+  JSON.stringify(clash.body),
+);
 const mapped = await call(kim.token, 'PUT', mapPath, { symbol: 'zztestb', exchange: 'BSE' });
 const kbook2 = await readDoc(`users/${kim.uid}/book/current`);
 check(
@@ -1127,6 +1133,50 @@ check(
         { symbol: 'ZZTESTC' },
       )
     ).status === 409,
+);
+
+// --- a preview goes out of date when the ledger changes under it (BUG-018, BUG-019) ---
+const lena = await emulatorUser();
+await call(lena.token, 'POST', '/api/v1/session');
+const l1 = await upload(lena.token, growwWith({ rows: [unknownRows[0]] }));
+await confirmImportOf(lena.token, l1.body?.importId);
+const l2 = await upload(lena.token, growwWith({ rows: unknownRows }));
+const sameTicker = await confirmImportOf(lena.token, l2.body?.importId, {
+  mappings: [{ line: l2.body?.rows?.find((r) => r.status === 'added')?.line, symbol: 'ZZSAME' }],
+});
+check(
+  'second statement: one row unchanged, one added (the base for the next checks)',
+  l2.status === 201 &&
+    l2.body?.counts?.unchanged === 1 &&
+    l2.body?.counts?.added === 1 &&
+    sameTicker.status === 200,
+  JSON.stringify({ counts: l2.body?.counts, confirm: sameTicker.body }),
+);
+const l3 = await upload(
+  lena.token,
+  growwWith({ rows: [{ ...unknownRows[0], quantity: 11 }, unknownRows[1]] }),
+);
+await call(lena.token, 'DELETE', `/api/v1/imports/${l2.body?.importId}`);
+const stale = await confirmImportOf(lena.token, l3.body?.importId);
+check(
+  'undoing the import a preview was compared with makes that preview out of date → 409 (BUG-018)',
+  l3.status === 201 && stale.status === 409 && stale.body?.error?.code === 'IMPORT_OUT_OF_DATE',
+  JSON.stringify({ preview: l3.body?.counts, confirm: stale.body }),
+);
+const mona = await emulatorUser();
+await call(mona.token, 'POST', '/api/v1/session');
+const m1 = await upload(mona.token, growwWith({ rows: unknownRows }));
+const dup = await confirmImportOf(mona.token, m1.body?.importId, {
+  mappings: (m1.body?.rows ?? []).map((r) => ({ line: r.line, symbol: 'ZZDUP' })),
+});
+check(
+  'two rows given one ticker → 422 DUPLICATE_HOLDING, nothing written (BUG-019)',
+  dup.status === 422 &&
+    dup.body?.error?.code === 'DUPLICATE_HOLDING' &&
+    m1.body?.counts?.unresolved === 2 &&
+    str(field(await readDoc(`users/${mona.uid}/imports/${m1.body?.importId}`), 'status')) ===
+      'draft',
+  JSON.stringify({ rows: m1.body?.rows?.map((r) => [r.status, r.unresolved]), dup: dup.body }),
 );
 
 // --- files that cannot be used say why ---

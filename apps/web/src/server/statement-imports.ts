@@ -1,12 +1,7 @@
 import 'server-only';
 import { InstrumentInput } from '@kosh/contracts';
 import { defaultCurrency, type InstrumentMeta } from '@kosh/core';
-import {
-  fingerprint,
-  type NormalisedStatement,
-  type ReconciliationCheck,
-  type RowIssue,
-} from '@kosh/parsers';
+import { type NormalisedStatement, type ReconciliationCheck, type RowIssue } from '@kosh/parsers';
 import { lookupIsin } from '@kosh/prices';
 import { FieldValue, type Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
@@ -16,6 +11,7 @@ import { applyLedgerChange, type ImportStatus } from './ledger';
 import { IMPORT_WRITE_BUDGET, importWrites } from './limits';
 import { fxOnDate, providerContext } from './market';
 import {
+  applyMappings,
   type CurrentLot,
   planStatement,
   type RemovedRow,
@@ -25,6 +21,7 @@ import {
   type StatementPlan,
   type StatementRow,
   statementRowToLedgerFields,
+  type TickerMapping,
 } from './statement-plan';
 
 /**
@@ -74,6 +71,8 @@ export interface StatementDraftDoc extends Omit<StatementPreview, 'importId' | '
   status: ImportStatus;
   accountId: string;
   fileHash: string;
+  /** The broker's lots the preview was compared against (absent on older drafts). */
+  basis?: StatementPlan['basis'];
 }
 
 interface IsinDoc {
@@ -256,6 +255,7 @@ export async function previewStatement(
     notes: parsed.notes,
     olderThanCurrent: plan.olderThanCurrent,
     removalsSuppressed: plan.removalsSuppressed,
+    basis: plan.basis,
   };
   const batch = db.batch();
   for (const d of oldDrafts.docs) batch.delete(d.ref);
@@ -263,10 +263,11 @@ export async function previewStatement(
   batch.set(ref, { ...doc, createdAt: FieldValue.serverTimestamp(), expiresAt });
   await batch.commit();
 
-  const { status: _status, accountId: _account, fileHash: _hash, ...preview } = doc;
+  const { status: _status, accountId: _account, fileHash: _hash, basis: _basis, ...preview } = doc;
   void _status;
   void _account;
   void _hash;
+  void _basis;
   return { ...preview, importId: ref.id, expiresAt: expiresAt.toISOString() };
 }
 
@@ -274,51 +275,7 @@ export interface StatementConfirmOptions {
   /** Required when the statement is older than the one in the ledger. */
   acceptOlder?: boolean;
   /** Tickers the user typed for unresolved rows, by file row. */
-  mappings?: { line: number; symbol: string; exchange?: 'NSE' | 'BSE' }[];
-}
-
-/** Apply a user's ticker to an unresolved row. Throws 422 for a ticker Kosh would not accept. */
-function applyMapping(
-  row: StatementRow,
-  mapping: NonNullable<StatementConfirmOptions['mappings']>[number],
-  source: string,
-  accountId: string,
-): StatementRow {
-  const checked = InstrumentInput.safeParse({
-    name: row.name,
-    assetClass: row.assetClass,
-    symbol: mapping.symbol,
-    ...(mapping.exchange ? { exchange: mapping.exchange } : {}),
-  });
-  if (!checked.success || !checked.data.symbol) {
-    throw new HttpError(422, 'VALIDATION_FAILED', `Row ${row.line}: that is not a valid ticker`, {
-      fields: { [`mappings.${row.line}`]: 'Letters, digits and . - & only' },
-    });
-  }
-  const symbol = checked.data.symbol;
-  const exchange = checked.data.exchange ?? 'NSE';
-  const instrumentId = instrumentIdFor({
-    assetClass: row.assetClass,
-    name: row.name,
-    symbol,
-    exchange,
-  });
-  return {
-    ...row,
-    instrumentId,
-    symbol,
-    exchange,
-    unresolved: false,
-    fingerprint: fingerprint({
-      source,
-      accountId,
-      instrumentId,
-      type: 'OPENING_BALANCE',
-      tradeDate: row.tradeDate,
-      qty: row.quantity,
-      price: row.avgBuyPrice,
-    }),
-  };
+  mappings?: TickerMapping[];
 }
 
 export async function confirmStatement(
@@ -334,11 +291,7 @@ export async function confirmStatement(
       'This statement is older than the one already imported. Confirm that you want to go back to it',
     );
   }
-  const mappings = new Map((options.mappings ?? []).map((m) => [m.line, m]));
-  const rows = draft.rows.map((r) => {
-    const m = mappings.get(r.line);
-    return m && r.unresolved ? applyMapping(r, m, draft.source, draft.accountId) : r;
-  });
+  const rows = applyMappings(draft.rows, options.mappings ?? [], draft.source, draft.accountId);
 
   const toAdd = rows.filter((r) => r.status !== 'unchanged');
   const retire = [
@@ -384,6 +337,7 @@ export async function confirmStatement(
       importMeta: { fingerprint: r.fingerprint, importId, parser: draft.parser },
     })),
     retireImported: retire,
+    ...(draft.basis ? { requireActive: draft.basis } : {}),
     manualPrices,
     importDoc: { id: importId, action: 'confirm' },
   });

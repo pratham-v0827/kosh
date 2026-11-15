@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { MAX_IMPORT_ROWS, type NormalisedStatement, runImport } from '@kosh/parsers';
 import { describe, expect, it } from 'vitest';
 import {
+  applyMappings,
   type CurrentLot,
   planStatement,
   type ResolvedIsin,
@@ -309,5 +310,114 @@ describe('statementRowToLedgerFields', () => {
       currency: 'INR',
       dateQuality: 'unknown',
     });
+  });
+});
+
+describe('the ledger a preview was planned against (BUG-018)', () => {
+  it('lists every current lot, unchanged ones included, so confirm can tell it changed', () => {
+    const s = groww();
+    const first = planStatement(s, { ...empty, resolved: allResolved(s) });
+    const current = asCurrent(first);
+    const again = planStatement(s, { ...empty, resolved: allResolved(s), current });
+    expect(again.counts.unchanged).toBe(11);
+    expect(again.basis).toEqual(
+      current.map((c) => ({ txnId: c.txnId, instrumentId: c.instrumentId })),
+    );
+    expect(first.basis).toEqual([]);
+  });
+});
+
+describe('applyMappings: tickers typed for unresolved rows (BUG-019)', () => {
+  const unresolvedPlan = () => {
+    const s = groww();
+    const resolved = allResolved(s);
+    resolved.set(s.holdings[1]!.isin!, null);
+    resolved.set(s.holdings[2]!.isin!, null);
+    return planStatement(s, { ...empty, resolved });
+  };
+
+  it('moves a mapped row to the ticker and leaves the others as they are', () => {
+    const plan = unresolvedPlan();
+    const line = plan.rows[1]!.line;
+    const rows = applyMappings(
+      plan.rows,
+      [{ line, symbol: 'abc', exchange: 'BSE' }],
+      'groww',
+      plan.accountId,
+    );
+    expect(rows[1]).toMatchObject({
+      instrumentId: 'IN_EQUITY:BSE:ABC',
+      symbol: 'ABC',
+      exchange: 'BSE',
+      unresolved: false,
+    });
+    expect(rows[1]!.fingerprint).not.toBe(plan.rows[1]!.fingerprint);
+    expect(rows[2]).toEqual(plan.rows[2]);
+    expect(rows[0]).toEqual(plan.rows[0]);
+  });
+
+  it('ignores a mapping for a row that already has a ticker', () => {
+    const plan = unresolvedPlan();
+    const rows = applyMappings(
+      plan.rows,
+      [{ line: plan.rows[0]!.line, symbol: 'XYZ' }],
+      'groww',
+      plan.accountId,
+    );
+    expect(rows[0]).toEqual(plan.rows[0]);
+  });
+
+  it('ignores a mapping for an unchanged row (it is not written again)', () => {
+    const plan = unresolvedPlan();
+    const again = planStatement(groww(), {
+      ...empty,
+      resolved: new Map(
+        plan.rows.map((r) => [
+          r.isin!,
+          r.unresolved ? null : { symbol: r.symbol!, exchange: 'NSE' as const },
+        ]),
+      ),
+      current: asCurrent(plan),
+    });
+    expect(again.rows[1]).toMatchObject({ status: 'unchanged', unresolved: true });
+    const rows = applyMappings(
+      again.rows,
+      [{ line: again.rows[1]!.line, symbol: 'T0' }],
+      'groww',
+      again.accountId,
+    );
+    expect(rows).toEqual(again.rows);
+  });
+
+  it('refuses a ticker that is not one', () => {
+    const plan = unresolvedPlan();
+    expect(() =>
+      applyMappings(
+        plan.rows,
+        [{ line: plan.rows[1]!.line, symbol: '../x?y=' }],
+        'groww',
+        plan.accountId,
+      ),
+    ).toThrow(/not a valid ticker/);
+  });
+
+  it('refuses two rows on one ticker: the account would hold two lots of one share', () => {
+    const plan = unresolvedPlan();
+    const [a, b] = [plan.rows[1]!.line, plan.rows[2]!.line];
+    expect(() =>
+      applyMappings(
+        plan.rows,
+        [
+          { line: a, symbol: 'SAME' },
+          { line: b, symbol: 'same' },
+        ],
+        'groww',
+        plan.accountId,
+      ),
+    ).toThrow(/already/);
+    // …or on the ticker of another row of the statement.
+    expect(() =>
+      applyMappings(plan.rows, [{ line: a, symbol: 'T0' }], 'groww', plan.accountId),
+    ).toThrow(/already/);
   });
 });

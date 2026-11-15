@@ -1,3 +1,4 @@
+import { InstrumentInput } from '@kosh/contracts';
 import type { Currency, LedgerTxn } from '@kosh/core';
 import {
   canonicalDecimal,
@@ -6,6 +7,7 @@ import {
   type NormalisedStatement,
   type RowIssue,
 } from '@kosh/parsers';
+import { HttpError } from './http';
 import { instrumentIdFor } from './instrument-id';
 
 /**
@@ -76,6 +78,12 @@ export interface StatementPlan {
   rows: StatementRow[];
   /** Holdings in the ledger that the statement no longer lists. */
   removed: RemovedRow[];
+  /**
+   * BUG-018: every lot of this broker the plan was compared against. Confirm checks they are all
+   * still active under the same holding; if not (say an earlier import was undone meanwhile), the
+   * preview is out of date, because "unchanged" rows are not written again.
+   */
+  basis: { txnId: string; instrumentId: string }[];
   issues: RowIssue[];
   newInstrumentIds: string[];
   /** The statement is dated before the one currently in the ledger. */
@@ -257,6 +265,7 @@ export function planStatement(s: NormalisedStatement, inputs: StatementPlanInput
     accountId,
     rows,
     removed,
+    basis: inputs.current.map((c) => ({ txnId: c.txnId, instrumentId: c.instrumentId })),
     issues,
     newInstrumentIds: [
       ...new Set(
@@ -299,4 +308,80 @@ export function statementRowToLedgerFields(
     dateQuality: r.dateQuality,
     ...(r.fxRate ? { fxRate: r.fxRate } : {}),
   };
+}
+
+export interface TickerMapping {
+  line: number;
+  symbol: string;
+  exchange?: 'NSE' | 'BSE';
+}
+
+/**
+ * Apply the tickers a user typed for unresolved rows (other rows are left alone). Throws 422 for
+ * a ticker Kosh would not accept, and (BUG-019) for two rows that would end up on one holding:
+ * a broker account holds one opening lot per share, and a later statement replaces just one.
+ */
+export function applyMappings(
+  rows: readonly StatementRow[],
+  mappings: readonly TickerMapping[],
+  source: string,
+  accountId: string,
+): StatementRow[] {
+  const byLine = new Map(mappings.map((m) => [m.line, m]));
+  const out = rows.map((row) => {
+    const mapping = byLine.get(row.line);
+    // An unchanged row is not written again: it is mapped from the holdings page instead.
+    if (!mapping || !row.unresolved || row.status === 'unchanged') return row;
+    const checked = InstrumentInput.safeParse({
+      name: row.name,
+      assetClass: row.assetClass,
+      symbol: mapping.symbol,
+      ...(mapping.exchange ? { exchange: mapping.exchange } : {}),
+    });
+    if (!checked.success || !checked.data.symbol) {
+      throw new HttpError(422, 'VALIDATION_FAILED', `Row ${row.line}: that is not a valid ticker`, {
+        fields: { [`mappings.${row.line}`]: 'Letters, digits and . - & only' },
+      });
+    }
+    const symbol = checked.data.symbol;
+    const exchange = checked.data.exchange ?? 'NSE';
+    const instrumentId = instrumentIdFor({
+      assetClass: row.assetClass,
+      name: row.name,
+      symbol,
+      exchange,
+    });
+    return {
+      ...row,
+      instrumentId,
+      symbol,
+      exchange,
+      unresolved: false,
+      fingerprint: fingerprint({
+        source,
+        accountId,
+        instrumentId,
+        type: 'OPENING_BALANCE',
+        tradeDate: row.tradeDate,
+        qty: row.quantity,
+        price: row.avgBuyPrice,
+      }),
+    };
+  });
+
+  const lineOf = new Map<string, number>();
+  for (const row of out) {
+    const other = lineOf.get(row.instrumentId);
+    if (other !== undefined) {
+      const typed = byLine.has(row.line) ? row.line : other;
+      throw new HttpError(
+        422,
+        'DUPLICATE_HOLDING',
+        `Row ${typed}: ${row.symbol ?? row.instrumentId} is already another row of this statement. Check the ticker`,
+        { fields: { [`mappings.${typed}`]: 'Already used by another row' } },
+      );
+    }
+    lineOf.set(row.instrumentId, row.line);
+  }
+  return out;
 }
