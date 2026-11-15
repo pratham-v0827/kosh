@@ -37,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { PriceChart } from '@/components/holdings/price-chart';
 import { api } from '@/lib/api';
 import { type TxnRow, useBook, useTransactions } from '@/lib/hooks';
 
@@ -330,6 +331,14 @@ export function HoldingDetail() {
           )}
         </CardContent>
       </Card>
+
+      <PriceChart
+        instrumentId={instrumentId}
+        assetClass={row.assetClass}
+        currency={row.currency}
+        avgCost={closed ? null : Number(row.avgCostCcy)}
+        asOf={book.data!.asOf}
+      />
 
       <Card>
         <CardHeader>

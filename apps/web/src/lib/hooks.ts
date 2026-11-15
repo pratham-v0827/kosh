@@ -150,6 +150,38 @@ export function useSeries(): Loadable<SeriesPointView[]> {
 
 export type IndexCloses = Partial<Record<BenchmarkId, IndexPoint[]>>;
 
+/** Yearly `{ d: { date: close } }` documents → valid closes, oldest first. */
+function closesFromYears(docs: readonly { get: (field: string) => unknown }[]): IndexPoint[] {
+  const points: IndexPoint[] = [];
+  for (const d of docs) {
+    const days = (d.get('d') ?? {}) as Record<string, unknown>;
+    for (const [date, close] of Object.entries(days)) {
+      if (typeof close === 'number' && close > 0) points.push({ date, close });
+    }
+  }
+  return points.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Daily closes (NAVs for funds) of one instrument, from the shared `priceHistory` cache. */
+export function usePriceHistory(instrumentId: string): Loadable<IndexPoint[]> {
+  const { user } = useAuth();
+  const [state, setState] = useState<{ id: string; value: Loadable<IndexPoint[]> } | null>(null);
+  const uid = user?.uid;
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      collection(clientDb(), 'priceHistory', instrumentId, 'years'),
+      (snap) =>
+        setState({
+          id: instrumentId,
+          value: { status: 'ready', data: closesFromYears(snap.docs) },
+        }),
+      (e) => setState({ id: instrumentId, value: { status: 'error', error: e.message } }),
+    );
+  }, [uid, instrumentId]);
+  return uid && state?.id === instrumentId ? state.value : { status: 'loading' };
+}
+
 /**
  * Daily closes of the benchmark indices (shared market data, `indices/{id}/years/{yyyy}`), oldest
  * first. Ready once every index has answered; an index with no data yet is simply missing.
@@ -166,14 +198,7 @@ export function useBenchmarkIndices(): Loadable<IndexCloses> {
       onSnapshot(
         collection(clientDb(), `indices/${id}/years`),
         (snap) => {
-          const points: IndexPoint[] = [];
-          for (const d of snap.docs) {
-            const days = (d.get('d') ?? {}) as Record<string, unknown>;
-            for (const [date, close] of Object.entries(days)) {
-              if (typeof close === 'number' && close > 0) points.push({ date, close });
-            }
-          }
-          points.sort((a, b) => a.date.localeCompare(b.date));
+          const points = closesFromYears(snap.docs);
           if (points.length > 0) data[id] = points;
           else delete data[id];
           answered.add(id);
