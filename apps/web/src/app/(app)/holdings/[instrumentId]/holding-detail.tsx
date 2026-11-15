@@ -140,7 +140,9 @@ export function HoldingDetail() {
           ? 'Needs USD/INR rate'
           : single?.xirrNote === 'NO_PRICE'
             ? 'Needs a price'
-            : '—';
+            : single?.xirrNote === 'NO_DATES'
+              ? 'Not available: your statement has no purchase dates'
+              : '—';
   const lots = holdings.flatMap((h) => h.lots);
   const closed = Number(row.qty) === 0;
 
@@ -268,6 +270,11 @@ export function HoldingDetail() {
               >
                 {xirrText}
               </span>
+              {single?.xirr !== null && single?.dateQuality === 'approximate' && (
+                <span className="block text-xs font-normal text-muted-foreground">
+                  Approximate: your statement gives only the first purchase date
+                </span>
+              )}
             </Stat>
           </dl>
           {row.price?.source === 'manual' && (

@@ -34,6 +34,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api, apiUpload } from '@/lib/api';
 import { clientDb } from '@/lib/firebase/client';
 import { cn } from '@/lib/utils';
+import { type StatementDraft, StatementPreview } from './statement-preview';
+import { UnmappedHoldings } from './unmapped-holdings';
 
 // Shapes written by the server (apps/web/src/server/imports.ts). Kept local so the statement
 // parsers, which are server-only, never enter the browser bundle.
@@ -59,6 +61,11 @@ interface RowIssue {
 }
 interface ImportDoc {
   id: string;
+  /** 'positions' = a holdings statement (see statement-preview.tsx); absent on older records. */
+  kind?: 'transactions' | 'positions';
+  /** Holdings statements: the broker's name and the statement's "as on" date. */
+  label?: string;
+  statementDate?: string;
   status: 'draft' | 'confirmed' | 'undone';
   parser: string;
   source: string;
@@ -119,6 +126,7 @@ export default function ImportPage() {
   const [formats, setFormats] = useState<FormatsResponse | null>(null);
   const [busy, setBusy] = useState<'upload' | 'confirm' | 'discard' | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -152,9 +160,19 @@ export default function ImportPage() {
 
   async function upload(file: File) {
     setUploadError(null);
+    setNotice(null);
     setBusy('upload');
     try {
-      await apiUpload('/api/v1/imports', file);
+      const r = await apiUpload<{
+        alreadyImported?: boolean;
+        label?: string;
+        statementDate?: string;
+      }>('/api/v1/imports', file);
+      if (r.alreadyImported) {
+        setNotice(
+          `This ${r.label} statement (as on ${r.statementDate}) is already imported. There is nothing to do.`,
+        );
+      }
     } catch (e) {
       setUploadError(message(e, 'Could not read that file'));
     } finally {
@@ -173,6 +191,11 @@ export default function ImportPage() {
       </div>
 
       <UploadCard busy={busy === 'upload'} error={uploadError} formats={formats} onFile={upload} />
+      {notice && (
+        <p role="status" className="rounded-lg border bg-accent p-3 text-sm">
+          {notice}
+        </p>
+      )}
 
       {imports.status === 'loading' ? (
         <Skeleton className="h-48" />
@@ -180,7 +203,18 @@ export default function ImportPage() {
         <ErrorState message={imports.error} />
       ) : (
         <>
-          {draft && <Preview key={draft.id} draft={draft} busy={busy} setBusy={setBusy} />}
+          {draft &&
+            (draft.kind === 'positions' ? (
+              <StatementPreview
+                key={draft.id}
+                draft={draft as unknown as StatementDraft}
+                busy={busy}
+                setBusy={setBusy}
+              />
+            ) : (
+              <Preview key={draft.id} draft={draft} busy={busy} setBusy={setBusy} />
+            ))}
+          <UnmappedHoldings />
           <HistoryCard rows={history} />
         </>
       )}
@@ -556,7 +590,17 @@ function HistoryCard({ rows }: { rows: ImportDoc[] }) {
             {rows.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="whitespace-nowrap">{when(r.createdAt)}</TableCell>
-                <TableCell className="num">{r.parser}</TableCell>
+                <TableCell>
+                  {r.kind === 'positions' && (
+                    <div className="font-medium">
+                      {r.label} holdings{' '}
+                      <span className="num font-normal text-muted-foreground">
+                        as on {r.statementDate}
+                      </span>
+                    </div>
+                  )}
+                  <span className="num text-xs text-muted-foreground">{r.parser}</span>
+                </TableCell>
                 <TableCell className="num text-right">{r.added ?? 0}</TableCell>
                 <TableCell>
                   <Badge variant={r.status === 'confirmed' ? 'secondary' : 'outline'}>
@@ -577,6 +621,8 @@ function HistoryCard({ rows }: { rows: ImportDoc[] }) {
                           <AlertDialogDescription>
                             The {r.added ?? 0} rows it added are removed from your holdings. You can
                             import the same file again later.
+                            {r.kind === 'positions' &&
+                              ' Holdings from an earlier statement are not brought back: import that statement again if you want them.'}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
