@@ -15,7 +15,14 @@ export { parseNavAll, amfiNavProvider, mfapiProvider } from './providers/amfi';
 export { coindcxProvider, parseTicker, price24hAgo } from './providers/coindcx';
 export { finnhubProvider, twelveDataProvider } from './providers/us';
 export { frankfurterFx } from './providers/frankfurter';
-export { yahooProvider, parseChart, yahooSymbol } from './providers/yahoo';
+export {
+  yahooProvider,
+  parseChart,
+  yahooSymbol,
+  fetchIndexHistory,
+  parseIndexHistory,
+  type IndexHistory,
+} from './providers/yahoo';
 export { type IsinLookup, type IsinMatch, lookupIsin, parseIsinSearch } from './isin';
 export {
   alphaVantageProvider,
