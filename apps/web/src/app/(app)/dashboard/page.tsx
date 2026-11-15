@@ -115,8 +115,10 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Values in ₹. Prices update automatically from free sources; unlisted shares use the
-            price you set.
+            {f.view.currency === 'USD' && f.usdInr
+              ? 'Values in US dollars, converted from rupees at today’s rate.'
+              : 'Values in ₹.'}{' '}
+            Prices update automatically from free sources; unlisted shares use the price you set.
             {data.fx && (
               <>
                 {' '}
