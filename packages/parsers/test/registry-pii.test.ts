@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -186,7 +186,9 @@ describe('committed fixtures contain no personal data', () => {
         ],
       },
     ]);
-    const path = join(tmpdir(), `kosh-pii-${process.pid}.xlsx`);
+    // a private directory (created with owner-only access), not a predictable name in the shared temp dir
+    const dir = mkdtempSync(join(tmpdir(), 'kosh-pii-'));
+    const path = join(dir, 'sheet.xlsx');
     writeFileSync(path, sheet);
     try {
       expect(
@@ -197,7 +199,7 @@ describe('committed fixtures contain no personal data', () => {
       // the raw bytes alone would have hidden it
       expect(scanPii(readFileSync(path, 'utf8'))).toEqual([]);
     } finally {
-      rmSync(path, { force: true });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
