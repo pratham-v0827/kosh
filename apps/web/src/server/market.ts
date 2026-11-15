@@ -2,6 +2,7 @@ import 'server-only';
 import type { AssetClass, FxInfo, PriceInfo } from '@kosh/core';
 import {
   type CachedQuote,
+  createMockFetch,
   freshness,
   frankfurterFx,
   fxFreshness,
@@ -11,6 +12,7 @@ import {
 } from '@kosh/prices';
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
+import { mockPricesEnabled } from '@/lib/firebase/emulator-guard';
 
 /**
  * Global market data shared by all users (public data only):
@@ -57,8 +59,11 @@ export class FirestoreRequestBudget implements RequestBudget {
   }
 }
 
+/** End-to-end runs (KOSH_MOCK_PRICES=true, emulators only): invented market data, no network. */
+const mockFetch = mockPricesEnabled() ? createMockFetch() : null;
+
 export const providerContext = (now = new Date()): ProviderContext => ({
-  fetch: globalThis.fetch.bind(globalThis),
+  fetch: mockFetch ?? globalThis.fetch.bind(globalThis),
   now,
   env: process.env,
   budget: new FirestoreRequestBudget(),
