@@ -1,7 +1,7 @@
 'use client';
 
 import { collection, limit, onSnapshot, orderBy, query, type Timestamp } from 'firebase/firestore';
-import { Download, FileUp, Loader2, Undo2, Upload } from 'lucide-react';
+import { FileUp, Loader2, Undo2, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { EmptyState, ErrorState } from '@/components/empty-state';
@@ -34,6 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api, apiUpload } from '@/lib/api';
 import { clientDb } from '@/lib/firebase/client';
 import { cn } from '@/lib/utils';
+import { SourcesCard } from './sources';
 import { type StatementDraft, StatementPreview } from './statement-preview';
 import { UnmappedHoldings } from './unmapped-holdings';
 
@@ -214,6 +215,7 @@ export default function ImportPage() {
             ) : (
               <Preview key={draft.id} draft={draft} busy={busy} setBusy={setBusy} />
             ))}
+          <SourcesCard imports={imports.rows} limits={formats?.limits ?? null} />
           <UnmappedHoldings />
           <HistoryCard rows={history} />
         </>
@@ -294,45 +296,6 @@ function UploadCard({
             {error}
           </p>
         )}
-
-        <div className="grid gap-4 text-sm md:grid-cols-2">
-          <div>
-            <h2 className="font-medium">Supported formats</h2>
-            <ul className="mt-1 space-y-1 text-muted-foreground">
-              {(formats?.formats ?? []).map((f) => (
-                <li key={f.id}>
-                  {f.label}{' '}
-                  <span className="num text-xs">
-                    ({f.id}@{f.version})
-                  </span>
-                </li>
-              ))}
-              {!formats && <li>Kosh CSV template</li>}
-            </ul>
-            <p className="mt-2 text-muted-foreground">
-              Broker and CAS statements are being added one format at a time.
-            </p>
-          </div>
-          <div>
-            <h2 className="font-medium">Kosh CSV template</h2>
-            <p className="mt-1 text-muted-foreground">
-              Works for any source: fill one row per buy, sell, dividend, split or bonus.
-            </p>
-            <a
-              href="/templates/kosh-import-template.csv"
-              download
-              className="mt-2 inline-flex min-h-6 items-center gap-1 text-primary underline-offset-2 hover:underline"
-            >
-              <Download aria-hidden className="size-4" /> Download the template
-            </a>
-            {formats && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Up to {formats.limits.maxRowsPerFile} rows per file and {formats.limits.rowsPerDay}{' '}
-                rows a day. Split longer histories by year.
-              </p>
-            )}
-          </div>
-        </div>
       </CardContent>
     </Card>
   );
