@@ -8,7 +8,24 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    # Major bumps that cannot land yet. Remove an entry once its blocker is gone.
+    ignore:
+      # Types must match the runtime pinned in .nvmrc (Node 24). Bump together with .nvmrc.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # typescript-eslint 8.x supports TypeScript < 6.1 only.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+      # eslint-config-next's plugins (react, import, jsx-a11y) support ESLint <= 9 only.
+      - dependency-name: 'eslint'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@eslint/js'
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # init and analyze must run the same version, so bump them in one PR.
+      codeql-action:
+        patterns: ['github/codeql-action*']
