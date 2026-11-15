@@ -110,6 +110,15 @@ describe('benchmark index closes (M3)', () => {
     await assertFails(alice().doc('indices/NIFTY50/years/2026').set({ d: {} }));
     await assertFails(admin().doc('indices/NIFTY50').set({ symbol: 'X' }));
   });
+
+  it('price history: signed-in users read it; nobody writes it', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('priceHistory/IN_EQUITY:TCS/years/2026').set({ d: {} });
+    });
+    await assertSucceeds(alice().collection('priceHistory/IN_EQUITY:TCS/years').get());
+    await assertFails(anon().collection('priceHistory/IN_EQUITY:TCS/years').get());
+    await assertFails(alice().doc('priceHistory/IN_EQUITY:TCS/years/2026').set({ d: {} }));
+  });
 });
 
 describe('shared provider budgets (M2.1)', () => {

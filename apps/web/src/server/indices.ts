@@ -2,7 +2,8 @@ import 'server-only';
 import { BENCHMARK_IDS, BENCHMARKS, type BenchmarkId } from '@kosh/core';
 import { fetchIndexHistory } from '@kosh/prices';
 import { adminDb } from '@/lib/firebase/admin';
-import { closesByYear, INDEX_RETRY_MS, type IndexDocState, planIndexFetch } from './index-plan';
+import { markRetry, storeDailyCloses } from './daily-closes';
+import { type IndexDocState, planIndexFetch } from './index-plan';
 import { istToday } from './ledger';
 import { providerContext } from './market';
 
@@ -29,29 +30,19 @@ export async function refreshIndices(now = new Date()): Promise<IndexRefresh> {
       }
       const r = await fetchIndexHistory(id, range, providerContext(now));
       if (r.status !== 'ok' || r.closes.length === 0) {
-        await ref.set({ retryAfter: now.getTime() + INDEX_RETRY_MS }, { merge: true });
+        await markRetry(ref, now);
         out[id] = r.status === 'unavailable' ? `unavailable: ${r.reason}` : 'no data';
         continue;
       }
-      const batch = db.batch();
-      for (const [year, days] of closesByYear(r.closes)) {
-        batch.set(ref.collection('years').doc(year), { d: days }, { merge: true });
-      }
-      const latest = r.closes.at(-1)!.date;
-      batch.set(
+      const { symbol, currency } = BENCHMARKS[id];
+      await storeDailyCloses(
         ref,
-        {
-          symbol: BENCHMARKS[id].symbol,
-          currency: BENCHMARKS[id].currency,
-          source: 'yahoo-unofficial',
-          checkedDay: today,
-          to: state?.to && state.to > latest ? state.to : latest,
-          retryAfter: 0,
-          updatedAt: now.toISOString(),
-        },
-        { merge: true },
+        r.closes,
+        { symbol, currency, source: 'yahoo-unofficial' },
+        state,
+        today,
+        now,
       );
-      await batch.commit();
       out[id] = `${range}: ${r.closes.length} closes`;
     } catch (e) {
       out[id] = `failed: ${(e as Error).message}`;

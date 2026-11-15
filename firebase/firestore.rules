@@ -89,6 +89,12 @@ service cloud.firestore {
       allow write: if false;
       match /years/{year} { allow read: if signedIn(); allow write: if false; }
     }
+    // Daily price history of listed instruments (same shape as indices; no user data).
+    match /priceHistory/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+      match /years/{year} { allow read: if signedIn(); allow write: if false; }
+    }
 
     // oauthClients, oauthGrants, oauthTokens, rateLimits, health → default deny (server only)
   }
