@@ -281,6 +281,44 @@ check(
   JSON.stringify(aaplTxn?.fields)?.slice(0, 200),
 );
 
+// --- daily price history of a holding (shared cache, fetched at most once a day) ---
+const historyOf = (token, id) =>
+  call(token, 'POST', `/api/v1/instruments/${encodeURIComponent(id)}/history`);
+check(
+  'price history: no token → 401; a share you do not hold → 404; crypto → unsupported',
+  (await historyOf(null, 'US_EQUITY:AAPL')).status === 401 &&
+    (await historyOf(alice.token, 'US_EQUITY:AAPL')).status === 404 &&
+    (await historyOf(carol.token, 'CRYPTO:BTC')).body?.status === 'unsupported',
+);
+// Make AAPL's history look ten days old, so the next request fetches the gap from the source.
+const tenDaysAgo = new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10);
+await fetch(
+  `http://${FS}/v1/projects/${PROJECT}/databases/(default)/documents/priceHistory/${encodeURIComponent('US_EQUITY:AAPL')}`,
+  {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { to: { stringValue: tenDaysAgo } } }),
+  },
+);
+const burst = await Promise.all(
+  Array.from({ length: 5 }, () => historyOf(carol.token, 'US_EQUITY:AAPL')),
+);
+const burstStatuses = burst.map((r) => r.body?.status);
+const aaplHistory = await readDoc(`priceHistory/${encodeURIComponent('US_EQUITY:AAPL')}`);
+check(
+  'five requests at once fetch the history once between them (BUG-021)',
+  burst.every((r) => r.status === 200) &&
+    burstStatuses.filter((s) => s === 'updated').length === 1 &&
+    burstStatuses.filter((s) => s === 'fresh').length === 4 &&
+    str(field(aaplHistory, 'checkedDay')) === today &&
+    field(aaplHistory, 'uid') === undefined,
+  JSON.stringify({ burstStatuses, doc: aaplHistory?.fields }),
+);
+check(
+  'asking again the same day → fresh, nothing fetched',
+  (await historyOf(carol.token, 'US_EQUITY:AAPL')).body?.status === 'fresh',
+);
+
 // M2.1: Indian stocks by exchange ticker. NSE → Yahoo (unofficial); BSE → Alpha Vantage (free
 // key, if set) → Yahoo. A BSE listing gets its own instrument id.
 const nse = await call(carol.token, 'POST', '/api/v1/holdings/manual', {

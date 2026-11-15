@@ -21,7 +21,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
 import { usePriceHistory } from '@/lib/hooks';
 
-type Status = 'checking' | 'fresh' | 'updated' | 'unsupported' | 'unavailable' | 'error';
+type Status =
+  'checking' | 'fresh' | 'updated' | 'pending' | 'unsupported' | 'unavailable' | 'error';
 
 const day = (iso: string, withYear: boolean) =>
   new Intl.DateTimeFormat('en-IN', {
@@ -87,7 +88,10 @@ export function PriceChart({
       assetClass === 'CRYPTO'
         ? 'Price history is not available for crypto yet.'
         : 'Unlisted shares have no market price history. Their value uses the price you set.';
-  } else if (history.status === 'loading' || (all.length === 0 && s === 'checking')) {
+  } else if (
+    history.status === 'loading' ||
+    (all.length === 0 && (s === 'checking' || s === 'pending'))
+  ) {
     return <Skeleton className="h-80" />;
   } else if (history.status === 'error') {
     empty = `The price history could not be loaded: ${history.error}`;

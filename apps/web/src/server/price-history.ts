@@ -2,13 +2,13 @@ import 'server-only';
 import type { AssetClass } from '@kosh/core';
 import { fetchDailyHistory, historySourceFor } from '@kosh/prices';
 import { adminDb } from '@/lib/firebase/admin';
-import { markRetry, storeDailyCloses } from './daily-closes';
+import { CLAIM_MS, claimDailyFetch, markRetry, storeDailyCloses } from './daily-closes';
 import { HttpError } from './http';
-import { type IndexDocState, planIndexFetch } from './index-plan';
 import { istToday } from './ledger';
 import { providerContext } from './market';
 
-export type HistoryStatus = 'fresh' | 'updated' | 'unsupported' | 'unavailable';
+/** pending: another request is fetching this history right now; it arrives by itself. */
+export type HistoryStatus = 'fresh' | 'updated' | 'pending' | 'unsupported' | 'unavailable';
 
 /**
  * Bring the shared daily price history of one of the user's instruments up to date (at most one
@@ -36,9 +36,13 @@ export async function ensurePriceHistory(
 
   const ref = db.doc(`priceHistory/${instrumentId}`);
   const today = istToday(now);
-  const state = (await ref.get()).data() as IndexDocState | undefined;
-  const range = planIndexFetch(state, today, now.getTime());
-  if (range === 'skip') return state?.to ? 'fresh' : 'unavailable';
+  const { range, state } = await claimDailyFetch(ref, today, now);
+  // Skipped: done today, failed within the hour, or another request is fetching it right now.
+  if (range === 'skip') {
+    if (state?.to) return 'fresh';
+    const claimed = (state?.retryAfter ?? 0) - now.getTime();
+    return claimed > 0 && claimed <= CLAIM_MS ? 'pending' : 'unavailable';
+  }
 
   const r = await fetchDailyHistory(source, range, providerContext(now));
   if (r.status !== 'ok' || r.closes.length === 0) {

@@ -2,8 +2,7 @@ import 'server-only';
 import { BENCHMARK_IDS, BENCHMARKS, type BenchmarkId } from '@kosh/core';
 import { fetchIndexHistory } from '@kosh/prices';
 import { adminDb } from '@/lib/firebase/admin';
-import { markRetry, storeDailyCloses } from './daily-closes';
-import { type IndexDocState, planIndexFetch } from './index-plan';
+import { claimDailyFetch, markRetry, storeDailyCloses } from './daily-closes';
 import { istToday } from './ledger';
 import { providerContext } from './market';
 
@@ -22,8 +21,7 @@ export async function refreshIndices(now = new Date()): Promise<IndexRefresh> {
   for (const id of BENCHMARK_IDS) {
     const ref = db.doc(`indices/${id}`);
     try {
-      const state = (await ref.get()).data() as IndexDocState | undefined;
-      const range = planIndexFetch(state, today, now.getTime());
+      const { range, state } = await claimDailyFetch(ref, today, now);
       if (range === 'skip') {
         out[id] = 'skipped';
         continue;
