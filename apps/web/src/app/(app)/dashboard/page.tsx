@@ -8,10 +8,11 @@ import { useMemo, useState } from 'react';
 import { AllocationCard } from '@/components/dashboard/allocation-card';
 import { BenchmarkCard } from '@/components/dashboard/benchmark-card';
 import { InsightsCard } from '@/components/dashboard/insights-card';
-import { sourceLabel } from '@/components/dashboard/labels';
+
 import { RangePicker, ValueChart } from '@/components/dashboard/value-chart';
 import { EmptyState, ErrorState } from '@/components/empty-state';
 import { Change, Money } from '@/components/num';
+import { sourceLabel } from '@/components/price-badge';
 import { useFormat } from '@/components/providers/settings-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

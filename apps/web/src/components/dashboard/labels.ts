@@ -56,26 +56,3 @@ export function sliceLabel(by: AllocationBy, key: string): string {
       return MARKET_CAP[key] ?? key;
   }
 }
-
-/** Price sources as shown to users (the same wording as the price badges). */
-export function sourceLabel(source: string): string {
-  switch (source) {
-    case 'yahoo-unofficial':
-      return 'Yahoo Finance (unofficial)';
-    case 'alphavantage':
-      return 'Alpha Vantage';
-    case 'amfi-navall':
-    case 'mfapi':
-      return 'AMFI NAV';
-    case 'coindcx-ticker':
-      return 'CoinDCX';
-    case 'finnhub':
-      return 'Finnhub';
-    case 'twelvedata':
-      return 'Twelve Data';
-    case 'manual':
-      return 'Your price';
-    default:
-      return source;
-  }
-}
