@@ -35,6 +35,9 @@ import { api, apiUpload } from '@/lib/api';
 import { clientDb } from '@/lib/firebase/client';
 import { cn } from '@/lib/utils';
 import { SourcesCard } from './sources';
+
+/** Imports listed in the history (newest first). */
+const HISTORY_LIMIT = 25;
 import { type StatementDraft, StatementPreview } from './statement-preview';
 import { UnmappedHoldings } from './unmapped-holdings';
 
@@ -134,7 +137,7 @@ export default function ImportPage() {
     const q = query(
       collection(clientDb(), `users/${user.uid}/imports`),
       orderBy('createdAt', 'desc'),
-      limit(25),
+      limit(HISTORY_LIMIT),
     );
     return onSnapshot(
       q,
@@ -215,7 +218,11 @@ export default function ImportPage() {
             ) : (
               <Preview key={draft.id} draft={draft} busy={busy} setBusy={setBusy} />
             ))}
-          <SourcesCard imports={imports.rows} limits={formats?.limits ?? null} />
+          <SourcesCard
+            imports={imports.rows}
+            complete={imports.rows.length < HISTORY_LIMIT}
+            limits={formats?.limits ?? null}
+          />
           <UnmappedHoldings />
           <HistoryCard rows={history} />
         </>

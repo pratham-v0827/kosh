@@ -3,6 +3,7 @@
 import type { Timestamp } from 'firebase/firestore';
 import { CheckCircle2, Circle, Download } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { lastImportOf } from '@/lib/import-sources';
 
 /** What the source cards need from an import record. */
 export interface SourceImport {
@@ -68,9 +69,13 @@ const asOn = (iso: string) =>
 /** One card per supported source: which file, how to get it, and when it was last imported. */
 export function SourcesCard({
   imports,
+  complete,
   limits,
 }: {
+  /** Newest first. */
   imports: readonly SourceImport[];
+  /** False when `imports` is only the most recent ones. */
+  complete: boolean;
   limits: { maxRowsPerFile: number; rowsPerDay: number } | null;
 }) {
   return (
@@ -84,9 +89,8 @@ export function SourcesCard({
       <CardContent>
         <ul className="grid gap-3 md:grid-cols-3">
           {SOURCES.map((s) => {
-            const last = imports.find(
-              (i) => i.status === 'confirmed' && i.parser.startsWith(`${s.parser}@`),
-            );
+            const found = lastImportOf(imports, s.parser, complete);
+            const last = found.kind === 'found' ? found.import : null;
             return (
               <li key={s.parser} className="flex flex-col gap-2 rounded-xl border p-4 text-sm">
                 <div className="flex items-start justify-between gap-2">
@@ -124,7 +128,9 @@ export function SourcesCard({
                 <p className="mt-auto pt-1 text-xs text-muted-foreground">
                   {last
                     ? `Last imported ${day(last.createdAt)}${last.statementDate ? `, statement as on ${asOn(last.statementDate)}` : ''}.`
-                    : 'Not imported yet.'}
+                    : found.kind === 'not-recent'
+                      ? 'Not among your recent imports.'
+                      : 'Not imported yet.'}
                 </p>
               </li>
             );
