@@ -3,6 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   allocation,
+  BENCHMARKS,
+  benchmarkComparison,
   benchmarkXirr,
   buildPositions,
   combinedXirr,
@@ -438,6 +440,84 @@ describe('benchmarkXirr (the same money in the index)', () => {
         'native',
       ),
     ).toEqual([{ d: '2023-02-01', a: -100 }]);
+  });
+});
+
+describe('benchmarkComparison (each market against its own index)', () => {
+  const nifty: IndexPoint[] = [
+    { date: '2022-12-30', close: 100 },
+    { date: '2024-01-01', close: 110 },
+  ];
+  // 4000 on the last close before 2023-02-01, 4400 now: +10% over 334 days
+  const sp: IndexPoint[] = [
+    { date: '2023-01-31', close: 4000 },
+    { date: '2024-01-01', close: 4400 },
+  ];
+  const TEN_PCT_334 = 1.1 ** (365 / 334) - 1;
+
+  it('Indian holdings vs Nifty 50 and Sensex in rupees; US holdings vs the S&P 500 in dollars', () => {
+    const h = book(
+      [
+        t({ instrumentId: 'IN_EQUITY:AAA', tradeDate: '2023-01-01' }), // 1000 → 1210
+        t({
+          instrumentId: 'US_EQUITY:USA',
+          tradeDate: '2023-02-01',
+          currency: 'USD',
+          fxRate: '80',
+          qty: '1',
+        }), // $100 → $110
+        t({ instrumentId: 'CRYPTO:BTC', tradeDate: '2023-01-01' }), // no index to compare with
+        t({
+          instrumentId: 'IN_EQUITY:CCC',
+          tradeDate: '2023-03-01',
+          type: 'OPENING_BALANCE',
+          dateQuality: 'unknown',
+        }),
+        t({ instrumentId: 'IN_EQUITY:DDD', tradeDate: '2023-01-01' }), // no price: left out
+      ],
+      {
+        'IN_EQUITY:AAA': price(121),
+        'US_EQUITY:USA': price(110, 'USD'),
+        'CRYPTO:BTC': price(1),
+        'IN_EQUITY:CCC': price(100),
+      },
+      {},
+      { rate: '90' },
+    );
+    const c = benchmarkComparison(h, ASOF, { NIFTY50: nifty, SP500: sp });
+    expect(c.map((g) => [g.market, g.currency])).toEqual([
+      ['IN', 'INR'],
+      ['US', 'USD'],
+    ]);
+
+    const [india, us] = c;
+    expect(india!.portfolio.rate).toBeCloseTo(0.21, PAISA);
+    expect(india!.portfolio.excluded).toEqual({ noDates: 1, unpriced: 1 });
+    // Only AAA's 1000 is invested in the index (DDD is left out on both sides): 100 → 110.
+    expect(india!.benchmarks).toEqual([
+      { id: 'NIFTY50', result: { ok: true, rate: expect.closeTo(0.1, 9) } },
+      { id: 'SENSEX', result: { ok: false, reason: 'NO_INDEX_DATA' } },
+    ]);
+
+    expect(us!.portfolio.rate).toBeCloseTo(TEN_PCT_334, PAISA);
+    expect(us!.benchmarks).toEqual([
+      { id: 'SP500', result: { ok: true, rate: expect.closeTo(TEN_PCT_334, 9) } },
+    ]);
+  });
+
+  it('a market with no holdings is left out', () => {
+    const h = book([t({ instrumentId: 'IN_EQUITY:AAA', tradeDate: '2023-01-01' })], {
+      'IN_EQUITY:AAA': price(110),
+    });
+    expect(benchmarkComparison(h, ASOF, {}).map((g) => g.market)).toEqual(['IN']);
+  });
+
+  it('every benchmark names its Yahoo symbol and currency', () => {
+    expect(BENCHMARKS).toEqual({
+      NIFTY50: { symbol: '^NSEI', currency: 'INR', market: 'IN' },
+      SENSEX: { symbol: '^BSESN', currency: 'INR', market: 'IN' },
+      SP500: { symbol: '^GSPC', currency: 'USD', market: 'US' },
+    });
   });
 });
 

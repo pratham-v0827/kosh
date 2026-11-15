@@ -357,6 +357,62 @@ export function datedFlows(
   return [...flows].map(([d, a]) => ({ d, a })).sort((x, y) => toEpochDay(x.d) - toEpochDay(y.d));
 }
 
+/** The indices Kosh compares against. Prices come from Yahoo (unofficial), cached server-side. */
+export const BENCHMARKS = {
+  NIFTY50: { symbol: '^NSEI', currency: 'INR', market: 'IN' },
+  SENSEX: { symbol: '^BSESN', currency: 'INR', market: 'IN' },
+  SP500: { symbol: '^GSPC', currency: 'USD', market: 'US' },
+} as const satisfies Record<
+  string,
+  { symbol: string; currency: 'INR' | 'USD'; market: Exclude<Geography, 'GLOBAL'> }
+>;
+export type BenchmarkId = keyof typeof BENCHMARKS;
+export const BENCHMARK_IDS = Object.keys(BENCHMARKS) as BenchmarkId[];
+
+export interface BenchmarkGroup {
+  market: 'IN' | 'US';
+  /** Currency of both figures: rupees for India, dollars for the US. */
+  currency: 'INR' | 'USD';
+  /** XIRR of this market's holdings (the same positions the index figures use). */
+  portfolio: XirrSummary;
+  benchmarks: { id: BenchmarkId; result: BenchmarkResult }[];
+}
+
+/**
+ * Each market's holdings against its own index, in its own currency: Indian holdings against the
+ * Nifty 50 and Sensex in rupees, US holdings against the S&P 500 in dollars (so currency moves
+ * do not count as out- or under-performance). Crypto has no index here and is left out. Both
+ * sides use the same positions: undated and unpriced ones are left out of both.
+ */
+export function benchmarkComparison(
+  holdings: Record<string, HoldingView>,
+  asOf: string,
+  indices: Partial<Record<BenchmarkId, readonly IndexPoint[]>>,
+): BenchmarkGroup[] {
+  const groups: BenchmarkGroup[] = [];
+  for (const market of ['IN', 'US'] as const) {
+    const list = Object.values(holdings).filter(
+      (h) => geographyOf(h.assetClass) === market && (isOpen(h) || h.cashflows.length > 0),
+    );
+    if (list.length === 0) continue;
+    const currency = market === 'US' ? 'native' : 'INR';
+    const used = list.filter(
+      (h) => h.dateQuality !== 'unknown' && !(isOpen(h) && (h.value === null || h.price === null)),
+    );
+    const flows = datedFlows(used, currency);
+    groups.push({
+      market,
+      currency: market === 'US' ? 'USD' : 'INR',
+      portfolio: combinedXirr(list, asOf, { currency }),
+      benchmarks: BENCHMARK_IDS.filter((id) => BENCHMARKS[id].market === market).map((id) => ({
+        id,
+        result: benchmarkXirr(flows, indices[id] ?? [], asOf),
+      })),
+    });
+  }
+  return groups;
+}
+
 // ---------- value over time ----------
 
 export type ChartRange = '1W' | '1M' | '3M' | '6M' | '1Y' | 'ALL';
