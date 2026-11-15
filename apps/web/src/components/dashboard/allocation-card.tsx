@@ -1,6 +1,12 @@
 'use client';
 
-import { type AllocationBy, allocation, type HoldingView } from '@kosh/core';
+import {
+  type AllocationBy,
+  allocation,
+  type HoldingView,
+  MARKET_CAP_LIST,
+  marketCapOf,
+} from '@kosh/core';
 import { useMemo, useState } from 'react';
 import { useFormat } from '@/components/providers/settings-provider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +18,15 @@ const GROUPINGS: { by: AllocationBy; label: string }[] = [
   { by: 'account', label: 'Broker' },
   { by: 'geography', label: 'Country' },
   { by: 'instrumentType', label: 'Kind' },
+  { by: 'marketCap', label: 'Market cap' },
 ];
+
+const listDate = new Intl.DateTimeFormat('en-IN', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+}).format(new Date(`${MARKET_CAP_LIST.asOf}T00:00:00Z`));
 
 /**
  * Part-to-whole as ranked horizontal bars (one hue, largest first, one shared baseline): easier to
@@ -22,7 +36,10 @@ const GROUPINGS: { by: AllocationBy; label: string }[] = [
 export function AllocationCard({ holdings }: { holdings: Record<string, HoldingView> }) {
   const f = useFormat();
   const [by, setBy] = useState<AllocationBy>('assetClass');
-  const slices = useMemo(() => allocation(holdings, by), [holdings, by]);
+  const slices = useMemo(
+    () => allocation(holdings, by, { marketCap: marketCapOf }),
+    [holdings, by],
+  );
   const anyPriced = slices.some((s) => s.valueWeight !== null);
   const unpriced = slices.reduce((n, s) => n + s.unpriced, 0);
 
@@ -31,7 +48,8 @@ export function AllocationCard({ holdings }: { holdings: Record<string, HoldingV
       <CardHeader>
         <CardTitle>Allocation</CardTitle>
         <CardDescription>
-          {anyPriced ? 'Share of current value.' : 'Share of the amount invested (no prices yet).'}
+          {anyPriced ? 'Share of current value' : 'Share of the amount invested (no prices yet)'}
+          {by === 'marketCap' ? ', Indian shares only.' : '.'}
         </CardDescription>
         <div role="radiogroup" aria-label="Group by" className="mt-2 flex flex-wrap gap-1">
           {GROUPINGS.map((g) => (
@@ -52,6 +70,13 @@ export function AllocationCard({ holdings }: { holdings: Record<string, HoldingV
         </div>
       </CardHeader>
       <CardContent>
+        {slices.length === 0 && (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {by === 'marketCap'
+              ? 'No Indian shares to group by market cap.'
+              : 'No open holdings to show.'}
+          </p>
+        )}
         <ul className="space-y-3">
           {slices.map((s) => {
             const share = anyPriced ? (s.valueWeight ?? 0) : s.costWeight;
@@ -82,6 +107,13 @@ export function AllocationCard({ holdings }: { holdings: Record<string, HoldingV
           <p className="mt-3 text-xs text-muted-foreground">
             {unpriced} holding{unpriced === 1 ? '' : 's'} without a price{' '}
             {unpriced === 1 ? 'is' : 'are'} not in these shares.
+          </p>
+        )}
+        {by === 'marketCap' && slices.length > 0 && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            From AMFI’s list for the six months to {listDate}: the 100 largest companies are large
+            cap, the next 150 mid cap, and every other share small cap, including ones listed since.
+            ETFs and funds are left out.
           </p>
         )}
       </CardContent>
