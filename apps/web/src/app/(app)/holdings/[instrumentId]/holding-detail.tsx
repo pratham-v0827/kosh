@@ -5,6 +5,7 @@ import { groupByInstrument, MIN_XIRR_DAYS } from '@kosh/core';
 import { ArrowLeft, Pencil, Plus, Tag, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { Fragment } from 'react';
 import { toast } from 'sonner';
 import { ErrorState } from '@/components/empty-state';
 import { Change, Money } from '@/components/num';
@@ -110,14 +111,20 @@ export function HoldingDetail() {
   if (book.status === 'loading') return <Skeleton className="h-96" />;
   if (book.status === 'error') return <ErrorState message={book.error} />;
 
-  const holdings = book.data
-    ? Object.values(book.data.holdings).filter((h) => h.instrumentId === instrumentId)
-    : [];
-  const row = book.data
-    ? groupByInstrument(book.data.holdings, { includeClosed: true }).find(
-        (r) => r.instrumentId === instrumentId,
+  // This page is one listing (its transactions, price and deletion are per listing). The holdings
+  // list merges a share's NSE and BSE listings into one row; link to the other listing from here.
+  const listing = book.data
+    ? Object.fromEntries(
+        Object.entries(book.data.holdings).filter(([, h]) => h.instrumentId === instrumentId),
       )
-    : undefined;
+    : {};
+  const holdings = Object.values(listing);
+  const row = groupByInstrument(listing, { includeClosed: true })[0];
+  const otherListings = book.data
+    ? (groupByInstrument(book.data.holdings)
+        .find((r) => r.instrumentIds.includes(instrumentId))
+        ?.instrumentIds.filter((id) => id !== instrumentId) ?? [])
+    : [];
 
   if (!row || holdings.length === 0) {
     return (
@@ -180,8 +187,30 @@ export function HoldingDetail() {
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="secondary">{ASSET_CLASS_LABELS[row.assetClass]}</Badge>
             {row.symbol && <span className="font-mono text-xs">{row.symbol}</span>}
+            {row.assetClass === 'IN_EQUITY' && (
+              <span className="text-xs">
+                {instrumentId.startsWith('IN_EQUITY:BSE:') ? 'BSE' : 'NSE'}
+              </span>
+            )}
             {closed && <Badge variant="outline">Fully sold</Badge>}
           </div>
+          {otherListings.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              You also hold this share on{' '}
+              {otherListings.map((id, i) => (
+                <Fragment key={id}>
+                  {i > 0 && ', '}
+                  <Link
+                    href={`/holdings/${encodeURIComponent(id)}`}
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    {id.startsWith('IN_EQUITY:BSE:') ? 'BSE' : 'NSE'}
+                  </Link>
+                </Fragment>
+              ))}
+              . The holdings list shows them together.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <PriceDialog
