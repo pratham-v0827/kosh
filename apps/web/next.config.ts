@@ -2,6 +2,9 @@ import type { NextConfig } from 'next';
 import { securityHeaders } from './security-headers';
 
 const nextConfig: NextConfig = {
+  // Development only: the app is also opened as http://127.0.0.1:3000 (the Firebase emulators
+  // live on 127.0.0.1, and it gives a clean browser cache when localhost's is stale).
+  allowedDevOrigins: ['127.0.0.1'],
   cacheComponents: true,
   partialPrefetching: true,
   experimental: {
