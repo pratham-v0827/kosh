@@ -1,9 +1,14 @@
 'use client';
 
 import { ASSET_CLASS_LABELS } from '@kosh/contracts';
-import { ASSET_CLASSES, groupByInstrument } from '@kosh/core';
+import { type ChartRange, groupByInstrument, portfolioXirr } from '@kosh/core';
 import { Info, PiggyBank, Plus } from 'lucide-react';
 import Link from 'next/link';
+import { useMemo, useState } from 'react';
+import { AllocationCard } from '@/components/dashboard/allocation-card';
+import { InsightsCard } from '@/components/dashboard/insights-card';
+import { sourceLabel } from '@/components/dashboard/labels';
+import { RangePicker, ValueChart } from '@/components/dashboard/value-chart';
 import { EmptyState, ErrorState } from '@/components/empty-state';
 import { Change, Money } from '@/components/num';
 import { useFormat } from '@/components/providers/settings-provider';
@@ -11,15 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useBook } from '@/lib/hooks';
-
-const CLASS_COLOR: Record<(typeof ASSET_CLASSES)[number], string> = {
-  IN_EQUITY: 'bg-chart-1',
-  MUTUAL_FUND: 'bg-chart-2',
-  US_EQUITY: 'bg-chart-4',
-  CRYPTO: 'bg-chart-3',
-  UNLISTED: 'bg-chart-5',
-};
+import { useBook, useSeries } from '@/lib/hooks';
 
 function Explain({ children }: { children: string }) {
   return (
@@ -57,7 +54,11 @@ function Kpi({
 
 export default function DashboardPage() {
   const book = useBook();
+  const series = useSeries();
   const f = useFormat();
+  const [range, setRange] = useState<ChartRange>('3M');
+  const holdings = book.status === 'ready' ? book.data?.holdings : undefined;
+  const rows = useMemo(() => (holdings ? groupByInstrument(holdings) : []), [holdings]);
 
   if (book.status === 'loading') {
     return (
@@ -97,14 +98,13 @@ export default function DashboardPage() {
   }
 
   const t = data.totals;
-  const rows = groupByInstrument(data.holdings);
-  const allocation = ASSET_CLASSES.map((c) => ({ c, ...t.byAssetClass[c] }))
-    .filter((a) => a.count > 0)
-    .map((a) => ({
-      ...a,
-      pct: Number(t.invested) > 0 ? Number(a.invested) / Number(t.invested) : 0,
-    }))
-    .sort((a, b) => b.pct - a.pct);
+  const xirr = portfolioXirr(data.holdings, data.asOf);
+  // Where today's prices came from, for the badges under the headline figure.
+  const sources = new Map<string, number>();
+  for (const h of Object.values(data.holdings)) {
+    if (Number(h.qty) > 0 && h.price)
+      sources.set(h.price.source, (sources.get(h.price.source) ?? 0) + 1);
+  }
 
   return (
     <div className="space-y-6">
@@ -129,23 +129,37 @@ export default function DashboardPage() {
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi
-          label="Current value"
-          explain="Quantity × your latest price, for holdings that have a price."
-        >
+      <section aria-label="Current value" className="space-y-2">
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          Current value
+          <Explain>Quantity × your latest price, for holdings that have a price.</Explain>
+        </p>
+        <p className="text-4xl font-semibold tracking-tight break-words sm:text-5xl">
           <Money value={t.value} />
-          {t.unpricedCount > 0 && (
-            <p className="mt-1 text-xs font-normal text-warn">
-              {t.unpricedCount} holding{t.unpricedCount > 1 ? 's' : ''} without a price not included
-            </p>
-          )}
-          {t.staleCount > 0 && (
-            <p className="mt-1 text-xs font-normal text-warn">
-              Includes {t.staleCount} stale price{t.staleCount > 1 ? 's' : ''}
-            </p>
-          )}
-        </Kpi>
+        </p>
+        {(t.unpricedCount > 0 || t.staleCount > 0) && (
+          <p className="text-xs text-warn-fg">
+            {t.unpricedCount > 0 &&
+              `${t.unpricedCount} holding${t.unpricedCount > 1 ? 's' : ''} without a price not included. `}
+            {t.staleCount > 0 &&
+              `Includes ${t.staleCount} stale price${t.staleCount > 1 ? 's' : ''}.`}
+          </p>
+        )}
+        {sources.size > 0 && (
+          <ul className="flex flex-wrap gap-1.5" aria-label="Price sources">
+            {[...sources].map(([source, n]) => (
+              <li
+                key={source}
+                className="inline-flex min-h-6 items-center rounded-full border px-2 text-xs text-muted-foreground"
+              >
+                {sourceLabel(source)} · {n}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           label="Invested"
           explain="What you paid for the units you still hold, including charges (FIFO cost)."
@@ -180,41 +194,44 @@ export default function DashboardPage() {
             </>
           )}
         </Kpi>
+        <Kpi
+          label="XIRR (annualised)"
+          explain="Your yearly return, taking into account when you put money in and took it out. Holdings without purchase dates (from holdings statements) are left out."
+        >
+          {xirr.rate !== null ? (
+            <span className="num">{f.percent(xirr.rate, { signed: true, decimals: 1 })}</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+          <p className="mt-1 text-xs font-normal text-muted-foreground">
+            {xirr.reason === 'TOO_SHORT'
+              ? 'Shown once your first purchase is 30 days old.'
+              : xirr.reason === 'NO_DATA'
+                ? 'Needs holdings with purchase dates.'
+                : xirr.reason === 'NOT_COMPUTABLE'
+                  ? 'Cannot be calculated for these cash flows.'
+                  : xirr.approximate
+                    ? 'Approximate: some purchase dates are only the first purchase.'
+                    : 'From your dated purchases and sales.'}
+            {xirr.excluded.noDates > 0 &&
+              ` Leaves out ${xirr.excluded.noDates} holding${xirr.excluded.noDates > 1 ? 's' : ''} without purchase dates.`}
+            {xirr.excluded.unpriced > 0 && ` Leaves out ${xirr.excluded.unpriced} without a price.`}
+          </p>
+        </Kpi>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-5">
-        <Card className="min-w-0 lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Allocation by cost</CardTitle>
-            <CardDescription>Share of the amount invested in each asset type.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4 flex h-3 overflow-hidden rounded-full bg-muted" aria-hidden>
-              {allocation.map((a) => (
-                <div key={a.c} className={CLASS_COLOR[a.c]} style={{ width: `${a.pct * 100}%` }} />
-              ))}
-            </div>
-            <ul className="space-y-2">
-              {allocation.map((a) => (
-                <li key={a.c} className="flex items-center gap-3 text-sm">
-                  <span
-                    aria-hidden
-                    className={`size-2.5 shrink-0 rounded-full ${CLASS_COLOR[a.c]}`}
-                  />
-                  <span className="flex-1">{ASSET_CLASS_LABELS[a.c]}</span>
-                  <span className="num text-muted-foreground">
-                    {f.money(a.invested, { compact: true })}
-                  </span>
-                  <span className="num w-14 text-right font-medium">
-                    {f.percent(a.pct, { decimals: 1 })}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+      <section aria-label="Value over time" className="space-y-3">
+        <RangePicker value={range} onChange={setRange} />
+        <ValueChart series={series} range={range} asOf={data.asOf} />
+      </section>
 
-        <Card className="min-w-0 lg:col-span-3">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <AllocationCard holdings={data.holdings} />
+        <InsightsCard rows={rows} holdings={data.holdings} asOf={data.asOf} />
+      </div>
+
+      <div className="grid gap-4">
+        <Card className="min-w-0">
           <CardHeader className="flex items-center justify-between">
             <div>
               <CardTitle>Largest holdings</CardTitle>
