@@ -404,6 +404,15 @@ describe('XML scanner', () => {
     expect(texts).toEqual(['a', 'b', 'never closed']);
   });
 
+  // BUG-015: every '&' searched to the end of the text for a ';', so a cell of ampersands took
+  // quadratic time. A million of them would take tens of seconds; linear code needs milliseconds.
+  it('decodes a million unterminated ampersands quickly', () => {
+    const started = performance.now();
+    expect(decodeEntities('&'.repeat(1_000_000))).toHaveLength(1_000_000);
+    expect(decodeEntities('&amp'.repeat(250_000))).toHaveLength(1_000_000);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   it('stays fast on hostile input (linear time)', () => {
     const started = performance.now();
     decodeEntities('&'.repeat(200_000));

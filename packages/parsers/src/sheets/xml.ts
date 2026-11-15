@@ -22,9 +22,17 @@ export function decodeEntities(s: string): string {
   let pos = 0;
   while (amp !== -1) {
     out += s.slice(pos, amp);
-    const semi = s.indexOf(';', amp + 1);
-    // entity names are short; anything else is kept as literal text
-    if (semi === -1 || semi - amp > 12) {
+    // Entity names are short: look for the ';' only within the next 12 characters. Searching to
+    // the end of the text made a run of unterminated '&'s quadratic (BUG-015).
+    let semi = -1;
+    for (let i = amp + 1, stop = Math.min(s.length, amp + 13); i < stop; i++) {
+      if (s.charCodeAt(i) === 59 /* ; */) {
+        semi = i;
+        break;
+      }
+    }
+    // anything that is not a short entity is kept as literal text
+    if (semi === -1) {
       out += '&';
       pos = amp + 1;
     } else {
