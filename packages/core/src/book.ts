@@ -26,6 +26,10 @@ export interface InstrumentMeta {
   currency?: Currency;
   /** Indian stocks: listing exchange (default NSE). */
   exchange?: 'NSE' | 'BSE';
+  /** ISIN, when a statement supplied it. Lets a later statement find the same holding. */
+  isin?: string;
+  /** Exchange-traded funds are priced like shares but shown separately in allocation views. */
+  instrumentType?: 'STOCK' | 'ETF';
 }
 
 export type PriceStatus = 'fresh' | 'stale';
@@ -50,13 +54,18 @@ export interface FxInfo {
   status: PriceStatus;
 }
 
-export type XirrNote = 'NO_PRICE' | 'NO_FX' | 'TOO_SHORT' | 'NOT_COMPUTABLE';
+export type XirrNote = 'NO_PRICE' | 'NO_FX' | 'TOO_SHORT' | 'NOT_COMPUTABLE' | 'NO_DATES';
 
-export interface HoldingView extends Omit<Position, 'cashflows'> {
+export interface HoldingView extends Omit<Position, 'cashflows' | 'cashflowsCcy'> {
   name: string;
   assetClass: AssetClass;
   symbol: string | null;
+  /** Stock or exchange-traded fund (equities from a statement); absent otherwise. */
+  instrumentType?: 'STOCK' | 'ETF';
+  isin?: string;
+  // Stored as maps: Firestore cannot hold arrays of arrays.
   cashflows: { d: string; a: number }[];
+  cashflowsCcy?: { d: string; a: number }[];
   price: PriceInfo | null;
   /** fresh/stale from the price; "missing" when there is none (or no FX for a USD price). */
   priceStatus: PriceStatus | 'missing';
@@ -184,7 +193,10 @@ export function composeBook(
     if (open && usable) {
       val = valuePosition(p, price.price, fxUsed.rate);
       dc = dayChange(p, price, fxUsed);
-      if (p.firstAcquired && daysBetween(p.firstAcquired, asOf) < MIN_XIRR_DAYS) {
+      if (p.dateQuality === 'unknown') {
+        // No purchase dates (a holdings statement): an annualised return would be invented.
+        xirrNote = 'NO_DATES';
+      } else if (p.firstAcquired && daysBetween(p.firstAcquired, asOf) < MIN_XIRR_DAYS) {
         xirrNote = 'TOO_SHORT';
       } else {
         const r = positionXirr(p, val.value, asOf);
@@ -200,12 +212,17 @@ export function composeBook(
         : 'fresh'
       : 'missing';
 
+    const { cashflowsCcy: _ccyTuples, ...position } = p;
+    void _ccyTuples;
     holdings[key] = {
-      ...p,
+      ...position,
       name: meta.name,
       assetClass: meta.assetClass,
       symbol: meta.symbol,
+      ...(meta.instrumentType ? { instrumentType: meta.instrumentType } : {}),
+      ...(meta.isin ? { isin: meta.isin } : {}),
       cashflows: p.cashflows.map(([d, a]) => ({ d, a })),
+      ...(p.cashflowsCcy ? { cashflowsCcy: p.cashflowsCcy.map(([d, a]) => ({ d, a })) } : {}),
       price,
       priceStatus: status,
       fxRate: needsFx && fx ? fx.rate : null,
@@ -302,8 +319,27 @@ export interface InstrumentRow {
   realised: string;
   /** Share of total priced value, 0..1; null when unpriced. */
   weight: number | null;
-  accounts: { accountId: string; qty: string }[];
+  /** The same holding in each account (broker), largest first. */
+  accounts: AccountShare[];
   positionKeys: string[];
+  /** Every instrument in this row: one share listed on NSE and BSE is one row (NSE id first). */
+  instrumentIds: string[];
+  /** Stock or ETF, when known. */
+  instrumentType?: 'STOCK' | 'ETF';
+  /** The least certain purchase date across accounts. */
+  dateQuality: Position['dateQuality'];
+}
+
+export interface AccountShare {
+  accountId: string;
+  qty: string;
+  /** INR open cost in this account. */
+  invested: string;
+  /** INR value in this account; null when unpriced. */
+  value: string | null;
+  /** Average cost per unit in the holding's own currency. */
+  avgCostCcy: string;
+  dateQuality: Position['dateQuality'];
 }
 
 const sumOrNull = (list: HoldingView[], f: (h: HoldingView) => string | null) => {
@@ -312,21 +348,38 @@ const sumOrNull = (list: HoldingView[], f: (h: HoldingView) => string | null) =>
   return open.reduce((s, h) => s.plus(f(h)!), ZERO);
 };
 
+/**
+ * The holding a position belongs to. A BSE listing has its own instrument id
+ * (`IN_EQUITY:BSE:X`, so both listings can be priced) but is the same share as `IN_EQUITY:X`.
+ */
+export const holdingKeyOf = (instrumentId: string) =>
+  instrumentId.startsWith('IN_EQUITY:BSE:')
+    ? `IN_EQUITY:${instrumentId.slice('IN_EQUITY:BSE:'.length)}`
+    : instrumentId;
+
 export function groupByInstrument(
   holdings: Record<string, HoldingView>,
   options: { includeClosed?: boolean } = {},
 ): InstrumentRow[] {
   const groups = new Map<string, HoldingView[]>();
   for (const h of Object.values(holdings)) {
-    const list = groups.get(h.instrumentId) ?? [];
+    const key = holdingKeyOf(h.instrumentId);
+    const list = groups.get(key) ?? [];
     list.push(h);
-    groups.set(h.instrumentId, list);
+    groups.set(key, list);
   }
 
   const rows: InstrumentRow[] = [];
   let totalValue = ZERO;
-  for (const [instrumentId, list] of groups) {
+  for (const [, unsorted] of groups) {
+    // The NSE listing first: it names, prices and links the row.
+    const list = [...unsorted].sort(
+      (a, b) =>
+        Number(a.instrumentId.startsWith('IN_EQUITY:BSE:')) -
+        Number(b.instrumentId.startsWith('IN_EQUITY:BSE:')),
+    );
     const first = list[0]!;
+    const instrumentId = first.instrumentId;
     const qty = list.reduce((s, h) => s.plus(h.qty), ZERO);
     if (qty.isZero() && !options.includeClosed) continue;
     const invested = list.reduce((s, h) => s.plus(h.openCost), ZERO);
@@ -372,8 +425,25 @@ export function groupByInstrument(
         .toDecimalPlaces(2)
         .toString(),
       weight: null,
-      accounts: list.map((h) => ({ accountId: h.accountId, qty: h.qty })),
+      accounts: list
+        .filter((h) => new Decimal(h.qty).gt(0) || options.includeClosed)
+        .map((h) => ({
+          accountId: h.accountId,
+          qty: h.qty,
+          invested: new Decimal(h.openCost).toDecimalPlaces(2).toString(),
+          value: h.value,
+          avgCostCcy: h.avgCostCcy,
+          dateQuality: h.dateQuality,
+        }))
+        .sort((a, b) => Number(b.value ?? b.invested) - Number(a.value ?? a.invested)),
       positionKeys: list.map((h) => h.key),
+      instrumentIds: [...new Set(list.map((h) => h.instrumentId))],
+      ...(first.instrumentType ? { instrumentType: first.instrumentType } : {}),
+      dateQuality: list.some((h) => h.dateQuality === 'unknown')
+        ? 'unknown'
+        : list.some((h) => h.dateQuality === 'approximate')
+          ? 'approximate'
+          : 'exact',
     });
   }
   for (const r of rows) {

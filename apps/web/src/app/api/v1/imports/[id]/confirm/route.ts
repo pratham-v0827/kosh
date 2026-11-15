@@ -15,7 +15,7 @@ export const POST = route(
     const { uid } = await requireUser(req);
     const id = docIdParam((await ctx.params).id);
     const input = await readJson(req, ImportConfirmInput);
-    const result = await confirmImport(uid, id, input.skipLines);
+    const result = await confirmImport(uid, id, input);
     // Price the new holdings and record a snapshot after the response; the book already shows
     // the imported rows with cached prices.
     after(async () => {

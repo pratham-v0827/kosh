@@ -187,8 +187,33 @@ export function fieldErrors(error: z.ZodError): Record<string, string> {
 
 // ---------- imports ----------
 
-/** Confirm a previewed import. `skipLines` are file rows the user chose to leave out. */
+const TickerString = z.string().trim().min(1).max(20);
+
+/**
+ * Confirm a previewed import.
+ *  - skipLines: file rows the user chose to leave out (transaction files).
+ *  - acceptOlder: yes, replace my holdings with this OLDER statement (holdings statements).
+ *  - mappings: tickers typed for rows whose ISIN could not be resolved (holdings statements).
+ */
 export const ImportConfirmInput = z.object({
   skipLines: z.array(z.number().int().positive().max(1_000_000)).max(1000).optional(),
+  acceptOlder: z.boolean().optional(),
+  mappings: z
+    .array(
+      z.object({
+        line: z.number().int().positive().max(1_000_000),
+        symbol: TickerString,
+        exchange: ExchangeSchema.optional(),
+      }),
+    )
+    .max(500)
+    .optional(),
 });
 export type ImportConfirmInput = z.infer<typeof ImportConfirmInput>;
+
+/** Give an unmapped holding (imported under its ISIN) a ticker. */
+export const InstrumentSymbolInput = z.object({
+  symbol: TickerString,
+  exchange: ExchangeSchema.optional(),
+});
+export type InstrumentSymbolInput = z.infer<typeof InstrumentSymbolInput>;

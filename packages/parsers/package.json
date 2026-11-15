@@ -11,16 +11,19 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src test scripts"
+    "lint": "eslint src test scripts",
+    "coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@kosh/contracts": "workspace:*",
     "@kosh/core": "workspace:*",
+    "decimal.js": "^10.6.0",
     "papaparse": "^5.7.1"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "@types/papaparse": "^5.5.2",
+    "@vitest/coverage-v8": "5.1.0",
     "typescript": "6.0.3",
     "vitest": "5.1.0"
   }

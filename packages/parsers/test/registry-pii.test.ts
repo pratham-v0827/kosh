@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -9,11 +10,14 @@ import {
   type Parser,
   type ParserInput,
   PARSERS,
+  readWorkbook,
   redactPii,
   runImport,
   scanPii,
+  sniffContainer,
   supportedFormats,
 } from '../src';
+import { writeXlsx } from './support/write-xlsx';
 
 const ctx = { today: '2026-11-14', maxRows: MAX_IMPORT_ROWS };
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -152,6 +156,53 @@ describe('committed fixtures contain no personal data', () => {
       return statSync(p).isDirectory() ? walk(p) : [p];
     });
 
+  /**
+   * What a person would see in the file. Spreadsheets are opened and read cell by cell (their
+   * raw bytes are compressed or binary, so scanning those would find nothing). Whole numbers are
+   * included, since ids are sometimes stored as numbers; decimals are amounts and are left out.
+   */
+  const textOf = (file: string): string => {
+    const bytes = readFileSync(file);
+    if (sniffContainer(bytes) === 'other') return bytes.toString('utf8');
+    return readWorkbook(bytes)
+      .sheets.flatMap((sheet) => sheet.rows)
+      .map((row) =>
+        row
+          .map((c) =>
+            c?.t === 's' ? c.v : c?.t === 'n' && Number.isInteger(c.v) ? String(c.v) : '',
+          )
+          .join(','),
+      )
+      .join('\n');
+  };
+
+  it('a spreadsheet with personal data in a cell is caught', () => {
+    const sheet = writeXlsx([
+      {
+        name: 'S',
+        rows: [
+          ['PAN', 'ABCPD1234E'],
+          ['Mobile', 9876543210],
+        ],
+      },
+    ]);
+    // a private directory (created with owner-only access), not a predictable name in the shared temp dir
+    const dir = mkdtempSync(join(tmpdir(), 'kosh-pii-'));
+    const path = join(dir, 'sheet.xlsx');
+    writeFileSync(path, sheet);
+    try {
+      expect(
+        scanPii(textOf(path))
+          .map((x) => x.kind)
+          .sort(),
+      ).toEqual(['PAN', 'PHONE']);
+      // the raw bytes alone would have hidden it
+      expect(scanPii(readFileSync(path, 'utf8'))).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('fixtures, tests and the public template pass the scan', () => {
     const files = [
       ...walk(join(root, 'fixtures')),
@@ -159,8 +210,11 @@ describe('committed fixtures contain no personal data', () => {
     ];
     expect(files.length).toBeGreaterThan(1);
     const dirty = files
-      .map((f) => ({ f: f.slice(root.length), n: scanPii(readFileSync(f, 'utf8')).length }))
+      .map((f) => ({ f: f.slice(root.length), n: scanPii(textOf(f)).length }))
       .filter((x) => x.n > 0);
     expect(dirty).toEqual([]);
+    // the spreadsheets really were opened and read, not skipped as binary
+    expect(files.filter((f) => /\.xlsx?$/.test(f)).length).toBeGreaterThanOrEqual(2);
+    expect(textOf(files.find((f) => f.endsWith('.xls'))!)).toContain('Stock Symbol');
   });
 });

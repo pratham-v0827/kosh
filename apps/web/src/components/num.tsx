@@ -32,14 +32,16 @@ export function Change({
   const n = Number(value);
   const money = f.money(n, { signed: true, compact });
   // BUG-003: direction from the DISPLAYED amount, so "₹0.00" is never red with a down arrow.
-  const sign = shownDirection(n, money);
+  // In privacy mode the digits are hidden, so the direction comes from the real formatted amount.
+  const sign = shownDirection(n, f.money(n, { signed: true, compact, unmasked: true }));
   const dir = sign > 0 ? 'gain' : sign < 0 ? 'loss' : 'flat';
   const Icon = sign > 0 ? ArrowUpRight : sign < 0 ? ArrowDownRight : null;
   const percent = pct === null || pct === undefined ? null : f.percent(pct, { signed: true });
+  const amount = f.view.hidden ? ', amount hidden' : ` of ${f.money(Math.abs(n), { compact })}`;
   const label =
     dir === 'flat'
       ? `no change${percent ? `, ${percent}` : ''}`
-      : `${dir} of ${f.money(Math.abs(n), { compact })}${percent ? `, ${percent}` : ''}`;
+      : `${dir}${amount}${percent ? `, ${percent}` : ''}`;
 
   return (
     <span

@@ -10,7 +10,7 @@
   can ask Claude about your own portfolio.
 </p>
 
-> **Status: pre-alpha (Milestone 3 in progress).** Sign-in, manual holdings, free prices for Indian and US stocks, mutual funds and crypto ([sources](docs/prices.md)), USD holdings with FX, refresh snapshots and "Last refreshed" work. File import works with the [Kosh CSV template](docs/parsers/kosh-csv.md) (preview, duplicate detection, undo); broker and CAS statement formats are being added one at a time.
+> **Status: pre-alpha, Milestone 3 done (v0.3.0).** Sign-in, manual holdings, free prices for Indian and US stocks, mutual funds and crypto ([sources](docs/prices.md)), USD holdings with FX, refresh snapshots and "Last refreshed" work. Imports: Groww and INDmoney holdings statements and the [Kosh CSV template](docs/parsers/kosh-csv.md), each with a preview and undo. The dashboard has XIRR, allocation, insights and a comparison with the Nifty 50, Sensex and S&P 500; privacy mode and a US-dollar view are one key away.
 > See the [roadmap](docs/PLAN.md#12-roadmap--milestones).
 
 > **Disclaimer:** Kosh is **not investment advice** and is **not affiliated with** Zerodha, Groww,
@@ -31,16 +31,17 @@
 
 ## Supported sources and file formats
 
-| Source          | Method                                                   | Status          |
-| --------------- | -------------------------------------------------------- | --------------- |
-| Zerodha         | Kite Connect (your own free app) + Console tradebook CSV | Planned (M3–M4) |
-| Groww           | Holdings / order history export                          | Planned (M3)    |
-| INDmoney        | Holding statement / US account statement                 | Planned (M3)    |
-| Mutual funds    | CAMS/KFintech detailed CAS PDF                           | Planned (M3)    |
-| CoinDCX         | Trade history export                                     | Planned (M3)    |
-| Unlisted shares | Manual entry                                             | Available (M1)  |
+| Source          | Method                                                   | Status         |
+| --------------- | -------------------------------------------------------- | -------------- |
+| Zerodha         | Kite Connect (your own free app) + Console tradebook CSV | Planned (M4)   |
+| Groww           | Stocks holdings statement (.xlsx)                        | Available (M3) |
+| INDmoney        | US stocks holdings report (.xls)                         | Available (M3) |
+| Mutual funds    | CAMS/KFintech detailed CAS PDF                           | Planned (M4)   |
+| CoinDCX         | Trade history export                                     | Planned (M4)   |
+| Any broker      | [Kosh CSV template](docs/parsers/kosh-csv.md)            | Available (M3) |
+| Unlisted shares | Manual entry                                             | Available (M1) |
 
-Parsers are built from real, redacted sample files only. See [docs/PLAN.md §3](docs/PLAN.md#3-files-i-need-from-you).
+Parsers are built from real, redacted sample files only; see [Groww](docs/parsers/groww-holdings.md) and [INDmoney](docs/parsers/indmoney-us-holdings.md). See [docs/PLAN.md §3](docs/PLAN.md#3-files-i-need-from-you).
 
 ## Quick start (local, no cloud account needed)
 
@@ -63,19 +64,21 @@ The emulator UI is at http://127.0.0.1:4000.
 
 ## Scripts
 
-| Command                             | What it does                                                               |
-| ----------------------------------- | -------------------------------------------------------------------------- |
-| `pnpm dev:all`                      | Emulators + web app                                                        |
-| `pnpm dev`                          | Web app only (expects emulators running)                                   |
-| `pnpm emulators`                    | Auth + Firestore emulators only                                            |
-| `pnpm build`                        | Production build of every package                                          |
-| `pnpm lint` / `pnpm typecheck`      | Static checks                                                              |
-| `pnpm test`                         | Unit tests (portfolio maths)                                               |
-| `pnpm test:rules`                   | Firestore security-rules tests against the emulator                        |
-| `pnpm seed [email]`                 | Create a demo account with fake holdings (local emulators only)            |
-| `pnpm cron`                         | Run the daily price + snapshot job locally                                 |
-| `pnpm smoke`                        | End-to-end API checks (needs `pnpm dev:all` running; local emulators only) |
-| `pnpm format` / `pnpm format:check` | Prettier                                                                   |
+| Command                             | What it does                                                                            |
+| ----------------------------------- | --------------------------------------------------------------------------------------- |
+| `pnpm dev:all`                      | Emulators + web app                                                                     |
+| `pnpm dev`                          | Web app only (expects emulators running)                                                |
+| `pnpm emulators`                    | Auth + Firestore emulators only                                                         |
+| `pnpm build`                        | Production build of every package                                                       |
+| `pnpm lint` / `pnpm typecheck`      | Static checks                                                                           |
+| `pnpm test`                         | Unit tests (portfolio maths)                                                            |
+| `pnpm test:rules`                   | Firestore security-rules tests against the emulator                                     |
+| `pnpm seed [email]`                 | Create a demo account with fake holdings (local emulators only)                         |
+| `pnpm cron`                         | Run the daily price + snapshot job locally                                              |
+| `pnpm smoke`                        | End-to-end API checks (needs `pnpm dev:all` running; local emulators only)              |
+| `pnpm --filter @kosh/web e2e`       | Playwright walkthrough and page checks, mock prices ([details](apps/web/e2e/README.md)) |
+| `pnpm data:market-cap <file>`       | Rebuild the market-cap table from AMFI's half-yearly list                               |
+| `pnpm format` / `pnpm format:check` | Prettier                                                                                |
 
 ## Repository layout
 
@@ -83,6 +86,8 @@ The emulator UI is at http://127.0.0.1:4000.
 apps/web          Next.js app (UI, API routes, admin, MCP endpoint later)
 packages/core     Domain model and portfolio maths: FIFO ledger, XIRR, formatting (pure, fully tested)
 packages/contracts API request schemas (Zod), shared by server and forms
+packages/parsers  Statement parsers and in-memory spreadsheet readers (no file is stored)
+packages/prices   Free price providers, history, and mock market data for tests
 packages/ui       Design tokens shared with the future Android app
 firebase/         Firestore & Storage rules + rules tests
 brand/            Logo and brand sheet

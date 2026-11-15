@@ -13,17 +13,23 @@ import {
 } from '@/server/import-plan';
 
 const ctx = { today: '2026-11-14', maxRows: MAX_IMPORT_ROWS };
+const transactions = (r: ReturnType<typeof runImport>): NormalisedImport => {
+  if (r.kind !== 'transactions') throw new Error('expected a transaction file');
+  return r;
+};
 const parse = (text: string): NormalisedImport =>
-  runImport({ bytes: new TextEncoder().encode(text), fileName: 'x.csv' }, ctx);
+  transactions(runImport({ bytes: new TextEncoder().encode(text), fileName: 'x.csv' }, ctx));
 const sample = () =>
-  runImport(
-    {
-      bytes: readFileSync(
-        resolve(import.meta.dirname, '../../../packages/parsers/fixtures/kosh-csv/sample.csv'),
-      ),
-      fileName: 'x.csv',
-    },
-    ctx,
+  transactions(
+    runImport(
+      {
+        bytes: readFileSync(
+          resolve(import.meta.dirname, '../../../packages/parsers/fixtures/kosh-csv/sample.csv'),
+        ),
+        fileName: 'x.csv',
+      },
+      ctx,
+    ),
   );
 
 const HEADER =

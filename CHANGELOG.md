@@ -5,8 +5,35 @@ Parsers are versioned independently (e.g. `zerodha.tradebook@1.0.0`).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-15
+
+M3: broker statements, a richer dashboard, and an end-to-end test suite.
+
 ### Added
 
+- Holdings-statement imports (snapshots that replace the same broker's previous statement):
+  - Groww stocks holdings statement (`groww.holdings@1`, .xlsx): ISINs matched to NSE/BSE
+    tickers once and cached; unmatched holdings kept, valued at the statement price, and mapped
+    later from Import
+  - INDmoney US stocks holdings report (`indmoney.us-holdings@1`, .xls): USD lots with the ECB
+    rate on the first-purchase date, marked approximate
+  - Preview shows added, changed, unchanged and removed holdings and checks the file against its
+    own totals; nothing is removed when any row could not be read; an older statement needs an
+    explicit yes; only a SHA-256 of the file is kept
+  - In-house, size-capped .xls and .xlsx readers (no spreadsheet dependency)
+- Dashboard: current value with price-source badges, XIRR, value-over-time chart (1W to All, with
+  a table view), allocation by asset type, broker, country, kind or market cap (AMFI's list,
+  `pnpm data:market-cap`), insights (biggest moves, large positions, holding period), and a
+  comparison of each market's XIRR with the Nifty 50, Sensex and S&P 500 on the same cash flows
+- Holdings: one row per share across accounts and exchanges (NSE + BSE), per-account breakdown,
+  combined XIRR, broker filter, column chooser; a holding's daily price (or NAV) chart with your
+  average cost
+- Privacy mode (Shift+H), US-dollar view (Shift+U), command palette (Ctrl/Cmd+K)
+- Import page: a card per source with how to export the file and when it was last imported
+- End-to-end tests (Playwright, apps/web/e2e): a recorded walkthrough as an emulator-only user
+  and checks of every page at desktop and phone width with axe (WCAG 2.2 AA) and screenshots; a
+  required CI check. Invented, deterministic market data for these runs (`KOSH_MOCK_PRICES`,
+  emulators only)
 - M3 import framework:
   - `@kosh/parsers`: parser interface and registry (detect → parse → normalise, in memory only),
     fingerprint de-duplication, and the first format, the Kosh CSV template (`kosh.csv@1`)
@@ -21,7 +48,22 @@ Parsers are versioned independently (e.g. `zerodha.tradebook@1.0.0`).
 
 ### Fixed
 
-- Dates with an impossible month (for example `2025-14-03`) were accepted as valid (BUG-013)
+- M3 bug audit (docs/audits/m3-bugs.md): 14 bugs fixed, each with a test that failed first,
+  including:
+  - dates with an impossible month or day were accepted (BUG-013, BUG-017)
+  - confirming a statement preview after undoing the previous import dropped the holdings marked
+    "unchanged" (BUG-018); two rows or a mapping onto an existing ticker double-counted a share
+    (BUG-019, BUG-020)
+  - one share bought on NSE and on BSE showed as two rows (BUG-016)
+  - toasts and wide tables on phones failed WCAG checks (BUG-023, BUG-024)
+  - on phones, Google's sign-in script loaded on every page (BUG-025)
+
+### Security
+
+- Shared price data can be read one document at a time but no longer listed, which revealed what
+  other users of an instance hold (SEC-015)
+- Two spreadsheet inputs that took quadratic time are now linear (BUG-015, SEC-014)
+- Simultaneous requests fetch a day's price history once (BUG-021)
 
 ## [0.2.0] - 2026-11-14
 

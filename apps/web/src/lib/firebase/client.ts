@@ -1,5 +1,13 @@
 import { type FirebaseApp, getApp, getApps, initializeApp } from 'firebase/app';
-import { type Auth, connectAuthEmulator, getAuth } from 'firebase/auth';
+import {
+  type Auth,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  connectAuthEmulator,
+  getAuth,
+  indexedDBLocalPersistence,
+  initializeAuth,
+} from 'firebase/auth';
 import { connectFirestoreEmulator, type Firestore, getFirestore } from 'firebase/firestore';
 
 /**
@@ -35,10 +43,26 @@ function app(): FirebaseApp {
  * otherwise break redirect sign-in against the Auth emulator. */
 const emulatorHost = () => (typeof window === 'undefined' ? '127.0.0.1' : window.location.hostname);
 
-/** Browser-side Auth instance, wired to the Auth emulator in local development. */
+/** Set while a Google redirect sign-in is under way (see auth-provider). */
+export const REDIRECT_PENDING_KEY = 'kosh.redirectPending';
+
+/**
+ * Browser-side Auth instance, wired to the Auth emulator in local development.
+ *
+ * BUG-025: `getAuth()` comes with the popup/redirect resolver, which loads Google's sign-in helper
+ * script from apis.google.com on EVERY page in advance; that script pings Google, the CSP blocks
+ * the ping, and pages logged console errors. Auth is set up without the resolver (same
+ * persistence as getAuth), and the sign-in page passes it only when Google sign-in is chosen.
+ */
 export function clientAuth(): Auth {
   if (auth) return auth;
-  auth = getAuth(app());
+  try {
+    auth = initializeAuth(app(), {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
+    });
+  } catch {
+    auth = getAuth(app()); // already initialised (hot reload)
+  }
   if (useEmulators) {
     connectAuthEmulator(auth, `http://${emulatorHost()}:9099`, { disableWarnings: true });
   }

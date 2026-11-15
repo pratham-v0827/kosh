@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  browserPopupRedirectResolver,
   GoogleAuthProvider,
   sendSignInLinkToEmail,
   signInWithPopup,
@@ -18,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { EMAIL_KEY, safeNext } from '@/lib/auth-links';
-import { clientAuth } from '@/lib/firebase/client';
+import { clientAuth, REDIRECT_PENDING_KEY } from '@/lib/firebase/client';
 
 function SignInForm() {
   const { user, loading, error: authError } = useAuth();
@@ -39,14 +40,15 @@ function SignInForm() {
     setBusy('google');
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(clientAuth(), provider);
+      await signInWithPopup(clientAuth(), provider, browserPopupRedirectResolver);
     } catch (e) {
       const code = (e as { code?: string }).code;
       if (
         code === 'auth/popup-blocked' ||
         code === 'auth/operation-not-supported-in-this-environment'
       ) {
-        await signInWithRedirect(clientAuth(), provider);
+        sessionStorage.setItem(REDIRECT_PENDING_KEY, '1');
+        await signInWithRedirect(clientAuth(), provider, browserPopupRedirectResolver);
         return;
       }
       if (code !== 'auth/popup-closed-by-user' && code !== 'auth/cancelled-popup-request') {

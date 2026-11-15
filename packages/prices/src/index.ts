@@ -15,7 +15,16 @@ export { parseNavAll, amfiNavProvider, mfapiProvider } from './providers/amfi';
 export { coindcxProvider, parseTicker, price24hAgo } from './providers/coindcx';
 export { finnhubProvider, twelveDataProvider } from './providers/us';
 export { frankfurterFx } from './providers/frankfurter';
-export { yahooProvider, parseChart, yahooSymbol } from './providers/yahoo';
+export {
+  yahooProvider,
+  parseChart,
+  yahooSymbol,
+  fetchIndexHistory,
+  parseIndexHistory,
+  type IndexHistory,
+} from './providers/yahoo';
+export { type IsinLookup, type IsinMatch, lookupIsin, parseIsinSearch } from './isin';
+export { fetchDailyHistory, type HistorySource, historySourceFor, parseMfHistory } from './history';
 export {
   alphaVantageProvider,
   parseGlobalQuote,
@@ -67,3 +76,12 @@ export function coverage(env: Record<string, string | undefined>, providers = DE
     };
   });
 }
+export {
+  createMockFetch,
+  MOCK_CRYPTO,
+  MOCK_ISINS,
+  MOCK_NAVS,
+  MOCK_PRICES,
+  MOCK_USD_INR,
+  mockPrice,
+} from './mock';

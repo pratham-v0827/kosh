@@ -13,3 +13,16 @@ export function assertEmulatorModeAllowed(env: Record<string, string | undefined
     );
   }
 }
+
+/**
+ * KOSH_MOCK_PRICES=true replaces every market-data request with invented, deterministic data (for
+ * end-to-end tests and recordings). Allowed only with the local emulators, never on Vercel, so real
+ * users can never be shown made-up prices.
+ */
+export function mockPricesEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  if (env.KOSH_MOCK_PRICES !== 'true') return false;
+  if (!env.FIRESTORE_EMULATOR_HOST || env.VERCEL === '1' || Boolean(env.VERCEL_ENV)) {
+    throw new Error('KOSH_MOCK_PRICES=true only works with the local Firebase emulators');
+  }
+  return true;
+}

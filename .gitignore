@@ -29,6 +29,21 @@ pubsub-debug.log
 firebase/emulator-data/
 
 # real broker / CAS statements must never be committed
+# Spreadsheets and PDFs are ignored everywhere; only REDACTED fixtures are allowed back in.
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+*.ods
+*.pdf
+!packages/parsers/fixtures/**/*.xls
+!packages/parsers/fixtures/**/*.xlsx
+!packages/parsers/fixtures/**/*.pdf
+# broker export file names, whatever the extension (Groww, INDmoney)
+*Holdings_Statement_*
+*HOLDINGS_REPORT*
+# anything uploaded or dropped in for local testing
+uploads/
 packages/parsers/fixtures/_incoming/
 
 # tests
@@ -38,6 +53,8 @@ packages/parsers/fixtures/_incoming/
 /packages/*/coverage/
 playwright-report/
 test-results/
+# end-to-end recordings (videos) stay local: never committed
+/artifacts/
 
 # editors / OS
 .vscode/*

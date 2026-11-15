@@ -1,12 +1,23 @@
 'use client';
 
-import { FileUp, History, LayoutDashboard, List, LogOut, Plus, Settings } from 'lucide-react';
+import {
+  FileUp,
+  History,
+  LayoutDashboard,
+  List,
+  LogOut,
+  Plus,
+  Search,
+  Settings,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { CommandPalette, openCommandPalette } from '@/components/command-palette';
 import { Logo } from '@/components/logo';
 import { RefreshControl } from '@/components/refresh-control';
 import { useAuth } from '@/components/providers/auth-provider';
+import { ViewControls } from '@/components/view-controls';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -14,6 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -42,7 +54,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
       <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-6 px-4">
+        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4 lg:gap-6">
           <Logo href="/dashboard" size={28} />
           <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
             {NAV.filter((n) => n.href !== '/settings').map((n) => (
@@ -51,7 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={n.href}
                 aria-current={isActive(n.href) ? 'page' : undefined}
                 className={cn(
-                  'rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
+                  'rounded-md px-2 py-2 text-sm font-medium whitespace-nowrap lg:px-3 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
                   isActive(n.href) && 'bg-accent text-accent-foreground',
                 )}
               >
@@ -60,6 +72,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <ViewControls />
             <RefreshControl compact />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -77,6 +90,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {user?.email ?? 'Signed in'}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={openCommandPalette}>
+                  <Search aria-hidden /> Search and commands
+                  <DropdownMenuShortcut>Ctrl K</DropdownMenuShortcut>
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => router.push('/history')}>
                   <History aria-hidden /> Refresh history
                 </DropdownMenuItem>
@@ -96,6 +113,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+      <CommandPalette />
 
       <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-24 md:pb-10">
         {children}

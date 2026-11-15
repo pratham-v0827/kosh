@@ -1,6 +1,13 @@
 'use client';
 
-import type { BookTotals, FxInfo, HoldingView } from '@kosh/core';
+import {
+  BENCHMARK_IDS,
+  type BenchmarkId,
+  type BookTotals,
+  type FxInfo,
+  type HoldingView,
+  type IndexPoint,
+} from '@kosh/core';
 import { DEFAULT_SETTINGS, type Settings } from '@kosh/contracts';
 import { collection, doc, onSnapshot, query, type Timestamp, where } from 'firebase/firestore';
 import { useTheme } from 'next-themes';
@@ -101,4 +108,107 @@ export function useTransactions(instrumentId: string): Loadable<TxnRow[]> {
     );
   }, [uid, instrumentId]);
   return state;
+}
+
+export interface SeriesPointView {
+  /** YYYY-MM-DD */
+  date: string;
+  value: number;
+  invested: number;
+}
+
+/**
+ * The user's daily value history, from one `series/{year}` document per year (written by every
+ * refresh and by the daily job). Sorted by date.
+ */
+export function useSeries(): Loadable<SeriesPointView[]> {
+  const { user } = useAuth();
+  const [state, setState] = useState<Loadable<SeriesPointView[]>>({ status: 'loading' });
+  const uid = user?.uid;
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      collection(clientDb(), `users/${uid}/series`),
+      (snap) => {
+        const points: SeriesPointView[] = [];
+        for (const d of snap.docs) {
+          const days = (d.get('d') ?? {}) as Record<string, { v?: number; inv?: number }>;
+          for (const [date, p] of Object.entries(days)) {
+            if (typeof p?.v === 'number' && typeof p?.inv === 'number') {
+              points.push({ date, value: p.v, invested: p.inv });
+            }
+          }
+        }
+        points.sort((a, b) => a.date.localeCompare(b.date));
+        setState({ status: 'ready', data: points });
+      },
+      (e) => setState({ status: 'error', error: e.message }),
+    );
+  }, [uid]);
+  return uid ? state : { status: 'loading' };
+}
+
+export type IndexCloses = Partial<Record<BenchmarkId, IndexPoint[]>>;
+
+/** Yearly `{ d: { date: close } }` documents → valid closes, oldest first. */
+function closesFromYears(docs: readonly { get: (field: string) => unknown }[]): IndexPoint[] {
+  const points: IndexPoint[] = [];
+  for (const d of docs) {
+    const days = (d.get('d') ?? {}) as Record<string, unknown>;
+    for (const [date, close] of Object.entries(days)) {
+      if (typeof close === 'number' && close > 0) points.push({ date, close });
+    }
+  }
+  return points.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Daily closes (NAVs for funds) of one instrument, from the shared `priceHistory` cache. */
+export function usePriceHistory(instrumentId: string): Loadable<IndexPoint[]> {
+  const { user } = useAuth();
+  const [state, setState] = useState<{ id: string; value: Loadable<IndexPoint[]> } | null>(null);
+  const uid = user?.uid;
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      collection(clientDb(), 'priceHistory', instrumentId, 'years'),
+      (snap) =>
+        setState({
+          id: instrumentId,
+          value: { status: 'ready', data: closesFromYears(snap.docs) },
+        }),
+      (e) => setState({ id: instrumentId, value: { status: 'error', error: e.message } }),
+    );
+  }, [uid, instrumentId]);
+  return uid && state?.id === instrumentId ? state.value : { status: 'loading' };
+}
+
+/**
+ * Daily closes of the benchmark indices (shared market data, `indices/{id}/years/{yyyy}`), oldest
+ * first. Ready once every index has answered; an index with no data yet is simply missing.
+ */
+export function useBenchmarkIndices(): Loadable<IndexCloses> {
+  const { user } = useAuth();
+  const [state, setState] = useState<Loadable<IndexCloses>>({ status: 'loading' });
+  const uid = user?.uid;
+  useEffect(() => {
+    if (!uid) return;
+    const data: IndexCloses = {};
+    const answered = new Set<BenchmarkId>();
+    const unsubs = BENCHMARK_IDS.map((id) =>
+      onSnapshot(
+        collection(clientDb(), `indices/${id}/years`),
+        (snap) => {
+          const points = closesFromYears(snap.docs);
+          if (points.length > 0) data[id] = points;
+          else delete data[id];
+          answered.add(id);
+          if (answered.size === BENCHMARK_IDS.length)
+            setState({ status: 'ready', data: { ...data } });
+        },
+        (e) => setState({ status: 'error', error: e.message }),
+      ),
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [uid]);
+  return uid ? state : { status: 'loading' };
 }

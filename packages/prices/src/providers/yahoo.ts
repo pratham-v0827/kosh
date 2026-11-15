@@ -1,7 +1,15 @@
+import { BENCHMARKS, type BenchmarkId, type IndexPoint } from '@kosh/core';
 import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { createThrottle, getText, ProviderError } from '../http';
-import { INDIAN_ISIN, type PriceProvider, type PriceTarget, type Quote } from '../types';
+import {
+  type Currency,
+  INDIAN_ISIN,
+  type PriceProvider,
+  type PriceTarget,
+  type ProviderContext,
+  type Quote,
+} from '../types';
 
 /**
  * Yahoo Finance — UNOFFICIAL. This is Yahoo's own website endpoint, not a public API: there is
@@ -16,6 +24,8 @@ import { INDIAN_ISIN, type PriceProvider, type PriceTarget, type Quote } from '.
 
 const BASE = 'https://query1.finance.yahoo.com/v8/finance/chart/';
 const throttle = createThrottle(400);
+/** Shared by every call to Yahoo (prices and ISIN search), so their combined rate stays low. */
+export const yahooThrottle = throttle;
 
 // Validate only what we use; Yahoo adds and renames fields over time.
 const ChartResponse = z.object({
@@ -102,6 +112,110 @@ export function parseChart(
     source: 'yahoo-unofficial',
     delayed: true,
   };
+}
+
+// ---------- index history (benchmarks) ----------
+
+const HistoryResponse = z.object({
+  chart: z.object({
+    result: z
+      .array(
+        z.object({
+          meta: z.object({
+            currency: z.string().nullable().optional(),
+            exchangeTimezoneName: z.string().optional(),
+          }),
+          timestamp: z.array(z.number().int()).optional(),
+          indicators: z
+            .object({
+              quote: z.array(z.object({ close: z.array(z.number().nullable()).optional() })),
+            })
+            .optional(),
+        }),
+      )
+      .nullable(),
+    error: z.object({ code: z.string(), description: z.string().optional() }).nullable().optional(),
+  }),
+});
+
+function dayFormatter(timeZone: string | undefined): Intl.DateTimeFormat {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timeZone ?? 'UTC' });
+  } catch {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }); // unknown zone name
+  }
+}
+
+/**
+ * Daily closes from a chart response, one per day in the exchange's own time zone, oldest first.
+ * Returns null for "not found"; throws on a malformed body or an unexpected currency.
+ */
+export function parseIndexHistory(body: string, expectedCurrency: Currency): IndexPoint[] | null {
+  let json: unknown;
+  try {
+    json = JSON.parse(body);
+  } catch {
+    throw new ProviderError('yahoo-unofficial', 'invalid JSON');
+  }
+  const parsed = HistoryResponse.safeParse(json);
+  if (!parsed.success)
+    throw new ProviderError('yahoo-unofficial', 'unexpected response shape (format changed?)');
+  const { result, error } = parsed.data.chart;
+  if (error || !result || result.length === 0) return null;
+  const r = result[0]!;
+  if (r.meta.currency && r.meta.currency.toUpperCase() !== expectedCurrency) {
+    throw new ProviderError('yahoo-unofficial', `unexpected currency ${r.meta.currency}`);
+  }
+  const day = dayFormatter(r.meta.exchangeTimezoneName);
+  const closes = r.indicators?.quote[0]?.close ?? [];
+  const bars = (r.timestamp ?? [])
+    .map((ts, i) => ({ ts, close: closes[i] }))
+    .filter((b): b is { ts: number; close: number } => typeof b.close === 'number' && b.close > 0)
+    .sort((a, b) => a.ts - b.ts);
+  const byDay = new Map<string, number>();
+  for (const b of bars) {
+    byDay.set(day.format(b.ts * 1000), new Decimal(b.close).toDecimalPlaces(4).toNumber());
+  }
+  return [...byDay]
+    .map(([date, close]) => ({ date, close }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export type IndexHistory =
+  | { status: 'ok'; closes: IndexPoint[] }
+  | { status: 'not-found' }
+  | { status: 'unavailable'; reason: string };
+
+/** Daily closes of a benchmark index. Never throws; respects ENABLE_UNOFFICIAL_YAHOO. */
+export function fetchIndexHistory(
+  id: BenchmarkId,
+  range: '1mo' | '1y' | '10y',
+  ctx: ProviderContext,
+): Promise<IndexHistory> {
+  const { symbol, currency } = BENCHMARKS[id];
+  return fetchYahooHistory(symbol, currency, range, ctx);
+}
+
+/** Daily closes of a Yahoo symbol. Never throws; respects ENABLE_UNOFFICIAL_YAHOO. */
+export async function fetchYahooHistory(
+  symbol: string,
+  currency: Currency,
+  range: '1mo' | '1y' | '10y',
+  ctx: ProviderContext,
+): Promise<IndexHistory> {
+  if ((ctx.env.ENABLE_UNOFFICIAL_YAHOO ?? 'true').toLowerCase() === 'false') {
+    return { status: 'unavailable', reason: 'disabled by configuration' };
+  }
+  const url = `${BASE}${encodeURIComponent(symbol)}?range=${range}&interval=1d`;
+  try {
+    const body = await throttle(() =>
+      getText('yahoo-unofficial', url, ctx, { timeoutMs: 10000, retries: 2, acceptStatus: [404] }),
+    );
+    const closes = parseIndexHistory(body, currency);
+    return closes ? { status: 'ok', closes } : { status: 'not-found' };
+  } catch (e) {
+    return { status: 'unavailable', reason: e instanceof Error ? e.message : 'request failed' };
+  }
 }
 
 export const yahooProvider: PriceProvider = {

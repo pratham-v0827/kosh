@@ -3,9 +3,42 @@
 import * as React from 'react';
 import { cn } from 'cn';
 
+/**
+ * BUG-024: a table wider than the screen scrolls sideways inside its container, which keyboard
+ * users could not reach (WCAG 2.1.1, axe "scrollable-region-focusable"). While it overflows, the
+ * container is a focusable, named region; when it fits, it is not an extra tab stop.
+ */
+function useOverflows(ref: React.RefObject<HTMLDivElement | null>) {
+  const [overflows, setOverflows] = React.useState(false);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setOverflows(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    return () => observer.disconnect();
+  }, [ref]);
+  return overflows;
+}
+
 function Table({ className, ...props }: React.ComponentProps<'table'>) {
+  const container = React.useRef<HTMLDivElement>(null);
+  const overflows = useOverflows(container);
   return (
-    <div data-slot="table-container" className="relative w-full overflow-x-auto">
+    <div
+      ref={container}
+      data-slot="table-container"
+      className="relative w-full overflow-x-auto rounded-md focus-visible:outline-2 focus-visible:outline-ring"
+      {...(overflows
+        ? {
+            tabIndex: 0,
+            role: 'region',
+            'aria-label': `${props['aria-label'] ?? 'Table'} (scrolls sideways)`,
+          }
+        : {})}
+    >
       <table
         data-slot="table"
         className={cn('w-full caption-bottom text-sm', className)}

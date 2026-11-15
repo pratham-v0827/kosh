@@ -4,13 +4,19 @@ import { describe, expect, it } from 'vitest';
 import { ImportError, koshCsvParser, MAX_IMPORT_ROWS, type ParserInput, runImport } from '../src';
 
 const ctx = { today: '2026-11-14', maxRows: MAX_IMPORT_ROWS };
+/** runImport, narrowed to a transaction file (what every test here expects). */
+const run = (input: ParserInput, c: typeof ctx) => {
+  const result = runImport(input, c);
+  if (result.kind !== 'transactions') throw new Error('expected a transaction file');
+  return result;
+};
 const enc = (s: string) => new TextEncoder().encode(s);
 const file = (text: string, fileName = 'x.csv'): ParserInput => ({ bytes: enc(text), fileName });
 const fixture = (...p: string[]) => readFileSync(resolve(import.meta.dirname, '../fixtures', ...p));
 
 const HEADER =
   'date,type,asset_class,name,symbol,exchange,quantity,price,fees,amount,ratio,fx_rate,reference,note';
-const one = (row: string) => koshCsvParser.parse(file(`${HEADER}\n${row}\n`), ctx);
+const one = (row: string) => run(file(`${HEADER}\n${row}\n`), ctx);
 const code = (fn: () => unknown) => {
   try {
     fn();
@@ -54,7 +60,7 @@ describe('kosh.csv detection', () => {
 });
 
 describe('kosh.csv parsing', () => {
-  const sample = runImport({ bytes: fixture('kosh-csv', 'sample.csv'), fileName: 'my.csv' }, ctx);
+  const sample = run({ bytes: fixture('kosh-csv', 'sample.csv'), fileName: 'my.csv' }, ctx);
 
   it('normalises the whole fixture (snapshot)', () => {
     expect(sample.parser).toBe('kosh.csv@1.0.0');
@@ -98,7 +104,7 @@ describe('kosh.csv parsing', () => {
     const text =
       '\uFEFFDate,Type,Asset Class,Name,Symbol,Quantity,Price,Fx Rate,Reference\r\n' +
       '2024-01-05,BUY,Indian stocks,Infosys,infy,2,1500,,\r\n';
-    const out = runImport(file(text), ctx);
+    const out = run(file(text), ctx);
     expect(out.issues).toEqual([]);
     expect(out.rows[0]).toMatchObject({
       instrument: { assetClass: 'IN_EQUITY', name: 'Infosys', symbol: 'INFY' },
@@ -123,7 +129,7 @@ describe('kosh.csv parsing', () => {
       '2024-04-01,buy,in_equity,Huge,HUGE,NSE,99999999999999,10,,,,,,',
       'not-a-date,buy,in_equity,Bad Date,BD,NSE,1,10,,,,,,',
     ].join('\n');
-    const out = runImport(file(text), ctx);
+    const out = run(file(text), ctx);
     expect(out.totalRows).toBe(13);
     expect(out.rows.map((r) => r.instrument.name)).toEqual(['Good Co']);
     const byLine = Object.fromEntries(out.issues.map((i) => [i.line, i.field]));
@@ -153,14 +159,12 @@ describe('kosh.csv parsing', () => {
   });
 
   it('refuses files that are not usable at all', () => {
-    expect(code(() => runImport(file('date,type,name\n2024-01-01,buy,X\n'), ctx))).toBe(
-      'UNKNOWN_FORMAT',
-    );
+    expect(code(() => run(file('date,type,name\n2024-01-01,buy,X\n'), ctx))).toBe('UNKNOWN_FORMAT');
     expect(code(() => koshCsvParser.parse(file('date,type,quantity,fx_rate\n'), ctx))).toBe(
       'MISSING_COLUMNS',
     );
     const many = `${HEADER}\n${'2024-04-01,buy,in_equity,Co,CO,NSE,1,10,,,,,,\n'.repeat(6)}`;
-    expect(code(() => runImport(file(many), { ...ctx, maxRows: 5 }))).toBe('TOO_MANY_ROWS');
-    expect(runImport(file(many), { ...ctx, maxRows: 6 }).rows).toHaveLength(6);
+    expect(code(() => run(file(many), { ...ctx, maxRows: 5 }))).toBe('TOO_MANY_ROWS');
+    expect(run(file(many), { ...ctx, maxRows: 6 }).rows).toHaveLength(6);
   });
 });

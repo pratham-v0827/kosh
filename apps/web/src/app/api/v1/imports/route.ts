@@ -29,7 +29,9 @@ export const POST = route(async (req: Request) => {
   const { uid } = await requireUser(req);
   const upload = await readUpload(req, MAX_FILE_BYTES);
   try {
-    return ok(await previewImport(uid, upload), 201);
+    const preview = await previewImport(uid, upload);
+    // The same statement uploaded again creates nothing: 200 rather than 201.
+    return ok(preview, 'alreadyImported' in preview ? 200 : 201);
   } finally {
     upload.bytes.fill(0);
   }

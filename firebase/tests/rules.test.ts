@@ -94,6 +94,53 @@ describe('snapshots, series and shared market data (M2)', () => {
   });
 });
 
+describe('benchmark index closes (M3)', () => {
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.doc('indices/NIFTY50').set({ symbol: '^NSEI', currency: 'INR' });
+      await db.doc('indices/NIFTY50/years/2026').set({ d: { '2026-11-13': 26000.5 } });
+    });
+  });
+
+  it('signed-in users read index closes; nobody writes them; signed-out users read nothing', async () => {
+    await assertSucceeds(alice().doc('indices/NIFTY50').get());
+    await assertSucceeds(alice().collection('indices/NIFTY50/years').get());
+    await assertFails(anon().doc('indices/NIFTY50/years/2026').get());
+    await assertFails(alice().doc('indices/NIFTY50/years/2026').set({ d: {} }));
+    await assertFails(admin().doc('indices/NIFTY50').set({ symbol: 'X' }));
+  });
+
+  it('price history: signed-in users read it; nobody writes it', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('priceHistory/IN_EQUITY:TCS/years/2026').set({ d: {} });
+    });
+    await assertSucceeds(alice().collection('priceHistory/IN_EQUITY:TCS/years').get());
+    await assertFails(anon().collection('priceHistory/IN_EQUITY:TCS/years').get());
+    await assertFails(alice().doc('priceHistory/IN_EQUITY:TCS/years/2026').set({ d: {} }));
+  });
+
+  it('SEC-015: nobody can list which shares have prices or history (that is what others hold)', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.doc('priceHistory/IN_EQUITY:TCS').set({ to: '2026-11-13' });
+      await db.doc('prices/IN_EQUITY:TCS').set({ price: '1' });
+      await db.doc('fxHistory/2026').set({ d: {} });
+      await db.doc('instruments/IN_EQUITY:TCS').set({ name: 'TCS' });
+    });
+    for (const c of ['priceHistory', 'prices', 'indices', 'fx', 'fxHistory', 'instruments']) {
+      await assertFails(alice().collection(c).get());
+      await assertFails(admin().collection(c).get());
+    }
+    // Reading one known document (or a known share's yearly closes) still works.
+    await assertSucceeds(alice().doc('priceHistory/IN_EQUITY:TCS').get());
+    await assertSucceeds(alice().collection('priceHistory/IN_EQUITY:TCS/years').get());
+    await assertSucceeds(alice().doc('prices/IN_EQUITY:TCS').get());
+    await assertSucceeds(alice().doc('fxHistory/2026').get());
+    await assertSucceeds(alice().doc('instruments/IN_EQUITY:TCS').get());
+  });
+});
+
 describe('shared provider budgets (M2.1)', () => {
   it('no client (user or admin) can read or tamper with the Alpha Vantage daily budget', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
@@ -283,6 +330,7 @@ describe('bulk access and client-writable fields (SEC-012)', () => {
       'metrics/daily_2026-11-09',
       'rateLimits/x',
       'oauthTokens/x',
+      'isinMap/INE002A01018', // shared ISIN → ticker cache: written by the server only
     ]) {
       await assertFails(alice().doc(path).get());
       await assertFails(alice().doc(path).set({ x: 1 }));

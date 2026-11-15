@@ -70,6 +70,8 @@ interface InstrumentDoc {
   /** Absent on M1-era docs, which were always INR. */
   currency?: Currency;
   exchange?: 'NSE' | 'BSE';
+  isin?: string;
+  instrumentType?: 'STOCK' | 'ETF';
 }
 
 export const istToday = (d = new Date()) =>
@@ -171,6 +173,21 @@ export interface LedgerChange {
    *  - undo: every active transaction of that import is voided; it becomes "undone".
    */
   importDoc?: { id: string; action: 'confirm' | 'undo' };
+  /**
+   * Imported transactions to retire because a newer statement from the same broker replaces
+   * them. Each id must be an active, imported transaction.
+   */
+  retireImported?: string[];
+  /**
+   * BUG-018: transactions that must still be active, each under the given instrument, or the
+   * change is refused as out of date (a statement preview's view of the ledger).
+   */
+  requireActive?: { txnId: string; instrumentId: string }[];
+  /**
+   * Move a holding to another instrument identity: an ISIN-only holding that now has a ticker.
+   * Every active transaction of `from` moves to `to`, together with its manual price.
+   */
+  rekey?: { from: string; to: InstrumentMeta };
   instruments?: InstrumentMeta[];
   /** Manual prices in the instrument's currency. */
   manualPrices?: Record<string, { price: string; asOf: string }>;
@@ -188,6 +205,10 @@ export interface LedgerResult {
   duplicates?: number;
   /** Transactions voided by an import undo. */
   voided?: number;
+  /** Earlier statement lots retired by this change. */
+  replaced?: number;
+  /** Transactions moved by a re-key. */
+  moved?: number;
 }
 
 export interface BookLastRefresh {
@@ -258,6 +279,8 @@ export async function applyLedgerChange(
       ((change.add?.length ?? 0) > 0 ||
         (change.retire?.length ?? 0) > 0 ||
         change.importDoc !== undefined ||
+        (change.retireImported?.length ?? 0) > 0 ||
+        change.rekey !== undefined ||
         (change.instruments?.length ?? 0) > 0 ||
         Object.keys(change.manualPrices ?? {}).length > 0);
     const writeCounters = isEdit
@@ -288,6 +311,61 @@ export async function applyLedgerChange(
         ? activeSnap.docs.filter((d) => d.get('importId') === change.importDoc!.id).map((d) => d.id)
         : [];
     for (const id of undoIds) active.delete(id);
+
+    for (const { txnId, instrumentId } of change.requireActive ?? []) {
+      if (active.get(txnId)?.instrumentId !== instrumentId) {
+        throw new HttpError(
+          409,
+          'IMPORT_OUT_OF_DATE',
+          'Your holdings changed since this preview. Upload the file again',
+        );
+      }
+    }
+
+    // A newer statement replaces the broker's earlier statement lots.
+    for (const id of change.retireImported ?? []) {
+      const existing = active.get(id);
+      if (!existing) {
+        throw new HttpError(
+          409,
+          'IMPORT_OUT_OF_DATE',
+          'Your holdings changed since this preview. Upload the file again',
+        );
+      }
+      if (existing.accountId === MANUAL_ACCOUNT) {
+        throw new HttpError(409, 'NOT_EDITABLE', 'A statement can only replace imported holdings');
+      }
+      active.delete(id);
+    }
+
+    // Re-key: every active transaction of one instrument moves to another identity.
+    const rekeyIds: string[] = [];
+    if (change.rekey) {
+      for (const [id, t] of active) {
+        if (t.instrumentId !== change.rekey.from) continue;
+        rekeyIds.push(id);
+        active.set(id, { ...t, instrumentId: change.rekey.to.id });
+      }
+      if (rekeyIds.length === 0) throw new HttpError(404, 'NOT_FOUND', 'Holding not found');
+      // BUG-020: a statement account holds one lot per share; a second would never be replaced.
+      const moved = new Set(rekeyIds);
+      const movedAccounts = new Set(
+        rekeyIds.map((id) => active.get(id)!.accountId).filter((a) => a !== MANUAL_ACCOUNT),
+      );
+      for (const [id, t] of active) {
+        if (
+          !moved.has(id) &&
+          t.instrumentId === change.rekey.to.id &&
+          movedAccounts.has(t.accountId)
+        ) {
+          throw new HttpError(
+            409,
+            'ALREADY_HELD',
+            `This account already holds ${change.rekey.to.symbol ?? 'that share'} in another row. Check the ticker`,
+          );
+        }
+      }
+    }
 
     // Imported rows already in the ledger (same fingerprint, still active) are skipped, so
     // importing the same statement twice adds nothing.
@@ -323,6 +401,10 @@ export async function applyLedgerChange(
       instruments[d.id] = { id: d.id, ...doc, currency: doc.currency ?? 'INR' };
     }
     for (const i of change.instruments ?? []) instruments[i.id] ??= i;
+    if (change.rekey) {
+      instruments[change.rekey.to.id] ??= change.rekey.to;
+      delete instruments[change.rekey.from];
+    }
     for (const t of active.values()) {
       if (!instruments[t.instrumentId]) throw new HttpError(404, 'NOT_FOUND', 'Unknown holding');
     }
@@ -346,6 +428,11 @@ export async function applyLedgerChange(
       { price: string; asOf: string; updatedAt?: Date | { toDate?: () => Date } }
     > = {};
     for (const d of priceSnap.docs) manual[d.id] = d.data() as { price: string; asOf: string };
+    if (change.rekey && manual[change.rekey.from]) {
+      // the price the user (or a statement) gave the holding follows it to its new identity
+      manual[change.rekey.to.id] ??= manual[change.rekey.from]!;
+      delete manual[change.rekey.from];
+    }
     // prices set in THIS change were entered now
     for (const [id, p] of Object.entries(change.manualPrices ?? {}))
       manual[id] = { ...p, updatedAt: now };
@@ -390,14 +477,26 @@ export async function applyLedgerChange(
         { merge: true },
       );
     }
-    for (const i of change.instruments ?? []) {
-      if (!instSnap.docs.some((d) => d.id === i.id)) {
+    for (const i of [...(change.instruments ?? []), ...(change.rekey ? [change.rekey.to] : [])]) {
+      const existingDoc = instSnap.docs.find((d) => d.id === i.id);
+      if (existingDoc) {
+        // A statement can teach Kosh the ISIN of a holding the user already has.
+        if (i.isin && !existingDoc.get('isin')) {
+          tx.set(
+            existingDoc.ref,
+            { isin: i.isin, ...(i.instrumentType ? { instrumentType: i.instrumentType } : {}) },
+            { merge: true },
+          );
+        }
+      } else {
         const doc: InstrumentDoc & { createdAt: FieldValue } = {
           name: i.name,
           assetClass: i.assetClass,
           symbol: i.symbol,
           currency: i.currency ?? defaultCurrency(i.assetClass),
           ...(i.assetClass === 'IN_EQUITY' ? { exchange: i.exchange ?? 'NSE' } : {}),
+          ...(i.isin ? { isin: i.isin } : {}),
+          ...(i.instrumentType ? { instrumentType: i.instrumentType } : {}),
           createdAt: ts,
         };
         tx.set(userRef.collection('instruments').doc(i.id), doc);
@@ -456,6 +555,24 @@ export async function applyLedgerChange(
       tx.set(newRefs[i]!, doc);
     });
     for (const id of undoIds) tx.update(txCol.doc(id), { status: 'void', voidedAt: ts });
+    for (const id of change.retireImported ?? []) {
+      tx.update(txCol.doc(id), {
+        status: 'replaced',
+        voidedAt: ts,
+        ...(change.importDoc ? { replacedByImport: change.importDoc.id } : {}),
+      });
+    }
+    if (change.rekey) {
+      for (const id of rekeyIds) tx.update(txCol.doc(id), { instrumentId: change.rekey.to.id });
+      tx.delete(userRef.collection('instruments').doc(change.rekey.from));
+      const oldPrice = priceSnap.docs.find((d) => d.id === change.rekey!.from);
+      if (oldPrice) {
+        if (!priceSnap.docs.some((d) => d.id === change.rekey!.to.id)) {
+          tx.set(userRef.collection('manualPrices').doc(change.rekey.to.id), oldPrice.data());
+        }
+        tx.delete(oldPrice.ref);
+      }
+    }
     if (importRef && change.importDoc) {
       tx.set(
         importRef,
@@ -465,6 +582,7 @@ export async function applyLedgerChange(
               confirmedAt: ts,
               added: adds.length,
               skippedDuplicates: duplicates,
+              replaced: (change.retireImported ?? []).length,
               // the draft rows are no longer needed once they are in the ledger
               rows: FieldValue.delete(),
               expiresAt: FieldValue.delete(),
@@ -547,6 +665,8 @@ export async function applyLedgerChange(
       ...(snapshotId ? { snapshotId } : {}),
       ...(change.importDoc?.action === 'confirm' ? { duplicates } : {}),
       ...(change.importDoc?.action === 'undo' ? { voided: undoIds.length } : {}),
+      ...(change.retireImported ? { replaced: change.retireImported.length } : {}),
+      ...(change.rekey ? { moved: rekeyIds.length } : {}),
     };
   });
 }
@@ -605,7 +725,8 @@ function buildSnapshot(
   };
 }
 
-function stripMeta(d: TxnDoc): Omit<LedgerTxn, 'id'> {
+/** A stored transaction as a ledger entry: only the fields the ledger maths reads. */
+export function stripMeta(d: TxnDoc): Omit<LedgerTxn, 'id'> {
   const {
     accountId,
     instrumentId,
@@ -619,6 +740,7 @@ function stripMeta(d: TxnDoc): Omit<LedgerTxn, 'id'> {
     seq,
     currency,
     fxRate,
+    dateQuality,
   } = d;
   return {
     accountId,
@@ -633,6 +755,8 @@ function stripMeta(d: TxnDoc): Omit<LedgerTxn, 'id'> {
     seq,
     currency,
     fxRate,
+    // BUG-014: statement lots must stay "approximate" / "unknown" on every recompute
+    ...(dateQuality ? { dateQuality } : {}),
   };
 }
 

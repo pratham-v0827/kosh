@@ -22,7 +22,7 @@ interface RefreshResult {
   problems: { provider: string; message: string }[];
 }
 
-/** "Last refreshed: 9 Nov, 7:42 pm IST" + Refresh. Always visible in the app header. */
+/** "Refreshed 9 Nov, 7:42 pm IST" (from 1024 px wide) + Refresh, in the app header. */
 export function RefreshControl({ compact = false }: { compact?: boolean }) {
   const book = useBook();
   const [busy, setBusy] = useState(false);
@@ -55,12 +55,15 @@ export function RefreshControl({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <p
-        className={cn('text-xs text-muted-foreground', compact && 'hidden sm:block')}
+        className={cn(
+          'text-xs whitespace-nowrap text-muted-foreground',
+          compact && 'hidden lg:block',
+        )}
         aria-live="polite"
       >
         {at ? (
           <>
-            Last refreshed <time dateTime={at.toISOString()}>{fmtIST(at)} IST</time>
+            Refreshed <time dateTime={at.toISOString()}>{fmtIST(at)} IST</time>
           </>
         ) : book.status === 'ready' ? (
           'Not refreshed yet'

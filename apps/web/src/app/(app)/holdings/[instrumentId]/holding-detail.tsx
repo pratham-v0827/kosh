@@ -5,6 +5,7 @@ import { groupByInstrument, MIN_XIRR_DAYS } from '@kosh/core';
 import { ArrowLeft, Pencil, Plus, Tag, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { Fragment } from 'react';
 import { toast } from 'sonner';
 import { ErrorState } from '@/components/empty-state';
 import { Change, Money } from '@/components/num';
@@ -36,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { PriceChart } from '@/components/holdings/price-chart';
 import { api } from '@/lib/api';
 import { type TxnRow, useBook, useTransactions } from '@/lib/hooks';
 
@@ -110,14 +112,20 @@ export function HoldingDetail() {
   if (book.status === 'loading') return <Skeleton className="h-96" />;
   if (book.status === 'error') return <ErrorState message={book.error} />;
 
-  const holdings = book.data
-    ? Object.values(book.data.holdings).filter((h) => h.instrumentId === instrumentId)
-    : [];
-  const row = book.data
-    ? groupByInstrument(book.data.holdings, { includeClosed: true }).find(
-        (r) => r.instrumentId === instrumentId,
+  // This page is one listing (its transactions, price and deletion are per listing). The holdings
+  // list merges a share's NSE and BSE listings into one row; link to the other listing from here.
+  const listing = book.data
+    ? Object.fromEntries(
+        Object.entries(book.data.holdings).filter(([, h]) => h.instrumentId === instrumentId),
       )
-    : undefined;
+    : {};
+  const holdings = Object.values(listing);
+  const row = groupByInstrument(listing, { includeClosed: true })[0];
+  const otherListings = book.data
+    ? (groupByInstrument(book.data.holdings)
+        .find((r) => r.instrumentIds.includes(instrumentId))
+        ?.instrumentIds.filter((id) => id !== instrumentId) ?? [])
+    : [];
 
   if (!row || holdings.length === 0) {
     return (
@@ -140,7 +148,9 @@ export function HoldingDetail() {
           ? 'Needs USD/INR rate'
           : single?.xirrNote === 'NO_PRICE'
             ? 'Needs a price'
-            : '—';
+            : single?.xirrNote === 'NO_DATES'
+              ? 'Not available: your statement has no purchase dates'
+              : '—';
   const lots = holdings.flatMap((h) => h.lots);
   const closed = Number(row.qty) === 0;
 
@@ -178,8 +188,30 @@ export function HoldingDetail() {
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="secondary">{ASSET_CLASS_LABELS[row.assetClass]}</Badge>
             {row.symbol && <span className="font-mono text-xs">{row.symbol}</span>}
+            {row.assetClass === 'IN_EQUITY' && (
+              <span className="text-xs">
+                {instrumentId.startsWith('IN_EQUITY:BSE:') ? 'BSE' : 'NSE'}
+              </span>
+            )}
             {closed && <Badge variant="outline">Fully sold</Badge>}
           </div>
+          {otherListings.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              You also hold this share on{' '}
+              {otherListings.map((id, i) => (
+                <Fragment key={id}>
+                  {i > 0 && ', '}
+                  <Link
+                    href={`/holdings/${encodeURIComponent(id)}`}
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    {id.startsWith('IN_EQUITY:BSE:') ? 'BSE' : 'NSE'}
+                  </Link>
+                </Fragment>
+              ))}
+              . The holdings list shows them together.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <PriceDialog
@@ -268,6 +300,11 @@ export function HoldingDetail() {
               >
                 {xirrText}
               </span>
+              {single?.xirr !== null && single?.dateQuality === 'approximate' && (
+                <span className="block text-xs font-normal text-muted-foreground">
+                  Approximate: your statement gives only the first purchase date
+                </span>
+              )}
             </Stat>
           </dl>
           {row.price?.source === 'manual' && (
@@ -294,6 +331,14 @@ export function HoldingDetail() {
           )}
         </CardContent>
       </Card>
+
+      <PriceChart
+        instrumentId={instrumentId}
+        assetClass={row.assetClass}
+        currency={row.currency}
+        avgCost={closed ? null : Number(row.avgCostCcy)}
+        asOf={book.data!.asOf}
+      />
 
       <Card>
         <CardHeader>

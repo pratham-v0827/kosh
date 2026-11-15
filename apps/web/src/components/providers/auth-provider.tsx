@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  browserPopupRedirectResolver,
   getRedirectResult,
   onAuthStateChanged,
   signOut as fbSignOut,
@@ -9,7 +10,7 @@ import {
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { sessionEndReason } from '@/lib/auth-errors';
-import { clientAuth } from '@/lib/firebase/client';
+import { clientAuth, REDIRECT_PENDING_KEY } from '@/lib/firebase/client';
 
 interface AuthState {
   user: User | null;
@@ -29,7 +30,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const auth = clientAuth();
-    getRedirectResult(auth).catch((e: unknown) => setError(message(e)));
+    // Only after a Google redirect: checking otherwise would load Google's helper on every page.
+    if (sessionStorage.getItem(REDIRECT_PENDING_KEY)) {
+      sessionStorage.removeItem(REDIRECT_PENDING_KEY);
+      getRedirectResult(auth, browserPopupRedirectResolver).catch((e: unknown) =>
+        setError(message(e)),
+      );
+    }
     return onAuthStateChanged(auth, async (u) => {
       if (u) {
         const flag = `kosh.session.${u.uid}`;

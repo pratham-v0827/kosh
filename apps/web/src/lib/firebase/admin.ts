@@ -52,14 +52,20 @@ function createApp(): App {
   });
 }
 
-/** Lazily initialised so `next build` never needs credentials. */
-let configured = false;
+/**
+ * Lazily initialised so `next build` never needs credentials. BUG-026: the "configured" mark lives
+ * on the Firestore instance, which firebase-admin keeps for the whole process. A module-level
+ * flag was reset by every hot reload in `next dev`, and settings() then threw on every request.
+ */
+const CONFIGURED = Symbol.for('kosh.adminDb.configured');
 export const adminDb = () => {
-  const db = getFirestore(createApp());
-  if (!configured) {
+  const db = getFirestore(createApp()) as ReturnType<typeof getFirestore> & {
+    [CONFIGURED]?: true;
+  };
+  if (!db[CONFIGURED]) {
     // Optional fields are often absent; never fail a write because of an undefined value.
     db.settings({ ignoreUndefinedProperties: true });
-    configured = true;
+    db[CONFIGURED] = true;
   }
   return db;
 };

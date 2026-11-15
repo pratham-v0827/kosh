@@ -10,8 +10,20 @@ import {
 import { useTheme } from 'next-themes';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
 
+/**
+ * BUG-023: sonner's rich colours put mid-tone text on pale backgrounds (success, warning and
+ * error fell below WCAG AA 4.5:1 in axe). In light mode the text is darkened; the dark-mode
+ * defaults already pass.
+ */
+const LIGHT_RICH_TEXT = {
+  '--success-text': '#166534',
+  '--info-text': '#1e40af',
+  '--warning-text': '#92400e',
+  '--error-text': '#991b1b',
+} as React.CSSProperties;
+
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = 'system' } = useTheme();
+  const { theme = 'system', resolvedTheme } = useTheme();
 
   return (
     <Sonner
@@ -30,6 +42,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           '--normal-text': 'var(--popover-foreground)',
           '--normal-border': 'var(--border)',
           '--border-radius': 'var(--radius)',
+          ...(resolvedTheme === 'dark' ? {} : LIGHT_RICH_TEXT),
         } as React.CSSProperties
       }
       {...props}
