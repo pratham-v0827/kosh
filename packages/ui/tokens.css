@@ -63,6 +63,12 @@
     --input: #25304f;
     --ring: #818cf8;
     --brand-deep: #c7d2fe;
+    /* Chart series for the dark card surface: validated (dataviz validator, 2026-11-15). */
+    --chart-1: #6366f1;
+    --chart-2: #0d9488;
+    --chart-3: #d97706;
+    --chart-4: #0284c7;
+    --chart-5: #8b5cf6;
     --gain: #4ade80;
     --loss: #f87171;
     --warn: #fbbf24;
@@ -90,6 +96,12 @@
   --input: #25304f;
   --ring: #818cf8;
   --brand-deep: #c7d2fe;
+  /* Chart series for the dark card surface: validated (dataviz validator, 2026-11-15). */
+  --chart-1: #6366f1;
+  --chart-2: #0d9488;
+  --chart-3: #d97706;
+  --chart-4: #0284c7;
+  --chart-5: #8b5cf6;
   --gain: #4ade80;
   --loss: #f87171;
   --warn: #fbbf24;
