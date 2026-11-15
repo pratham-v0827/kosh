@@ -16,6 +16,8 @@ import { INDIAN_ISIN, type PriceProvider, type PriceTarget, type Quote } from '.
 
 const BASE = 'https://query1.finance.yahoo.com/v8/finance/chart/';
 const throttle = createThrottle(400);
+/** Shared by every call to Yahoo (prices and ISIN search), so their combined rate stays low. */
+export const yahooThrottle = throttle;
 
 // Validate only what we use; Yahoo adds and renames fields over time.
 const ChartResponse = z.object({
