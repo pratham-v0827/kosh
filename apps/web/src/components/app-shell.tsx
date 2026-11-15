@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
 import { RefreshControl } from '@/components/refresh-control';
 import { useAuth } from '@/components/providers/auth-provider';
+import { ViewControls } from '@/components/view-controls';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -42,7 +43,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
       <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-6 px-4">
+        <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-3 px-4 lg:gap-6">
           <Logo href="/dashboard" size={28} />
           <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
             {NAV.filter((n) => n.href !== '/settings').map((n) => (
@@ -51,7 +52,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={n.href}
                 aria-current={isActive(n.href) ? 'page' : undefined}
                 className={cn(
-                  'rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
+                  'rounded-md px-2 py-2 text-sm font-medium whitespace-nowrap lg:px-3 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
                   isActive(n.href) && 'bg-accent text-accent-foreground',
                 )}
               >
@@ -60,6 +61,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <ViewControls />
             <RefreshControl compact />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
