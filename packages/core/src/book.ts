@@ -26,6 +26,10 @@ export interface InstrumentMeta {
   currency?: Currency;
   /** Indian stocks: listing exchange (default NSE). */
   exchange?: 'NSE' | 'BSE';
+  /** ISIN, when a statement supplied it. Lets a later statement find the same holding. */
+  isin?: string;
+  /** Exchange-traded funds are priced like shares but shown separately in allocation views. */
+  instrumentType?: 'STOCK' | 'ETF';
 }
 
 export type PriceStatus = 'fresh' | 'stale';
