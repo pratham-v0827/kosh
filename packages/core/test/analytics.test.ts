@@ -443,6 +443,41 @@ describe('benchmarkXirr (the same money in the index)', () => {
   });
 });
 
+describe('groupByInstrument: one share bought on NSE and on BSE (BUG-016)', () => {
+  // The same company bought on two exchanges is one holding, not two identical-looking rows.
+  const NSE = 'IN_EQUITY:TCS';
+  const BSE = 'IN_EQUITY:BSE:TCS';
+  const h = book(
+    [
+      t({ instrumentId: BSE, tradeDate: '2023-01-01', qty: '5', price: '3000' }),
+      t({ instrumentId: NSE, tradeDate: '2023-06-01', accountId: 'import:kosh', qty: '5' }),
+      t({ instrumentId: 'IN_EQUITY:BSE:OTHER', tradeDate: '2023-01-01' }),
+    ],
+    { [NSE]: price(3300), [BSE]: price(3310), 'IN_EQUITY:BSE:OTHER': price(100) },
+    { [BSE]: { symbol: 'TCS', name: 'TCS' }, 'IN_EQUITY:BSE:OTHER': { symbol: 'OTHER' } },
+  );
+
+  it('merges the listings into one row, keyed and priced by the NSE listing', () => {
+    const rows = groupByInstrument(h);
+    const tcs = rows.filter((r) => r.symbol === 'TCS');
+    expect(tcs).toHaveLength(1);
+    const r = tcs[0]!;
+    expect(r.instrumentId).toBe(NSE);
+    expect(r.instrumentIds).toEqual([NSE, BSE]);
+    expect(r.qty).toBe('10');
+    expect(r.invested).toBe('15500'); // 5 × 3000 + 5 × 100
+    expect(r.value).toBe('33050'); // each listing at its own price: 5 × 3300 + 5 × 3310
+    expect(r.price?.price).toBe('3300');
+    expect(r.accounts.map((a) => a.accountId).sort()).toEqual(['import:kosh', 'manual']);
+  });
+
+  it('a share held only on BSE keeps its own id', () => {
+    const other = groupByInstrument(h).find((r) => r.symbol === 'OTHER')!;
+    expect(other.instrumentId).toBe('IN_EQUITY:BSE:OTHER');
+    expect(other.instrumentIds).toEqual(['IN_EQUITY:BSE:OTHER']);
+  });
+});
+
 describe('benchmarkComparison (each market against its own index)', () => {
   const nifty: IndexPoint[] = [
     { date: '2022-12-30', close: 100 },

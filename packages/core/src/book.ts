@@ -322,6 +322,8 @@ export interface InstrumentRow {
   /** The same holding in each account (broker), largest first. */
   accounts: AccountShare[];
   positionKeys: string[];
+  /** Every instrument in this row: one share listed on NSE and BSE is one row (NSE id first). */
+  instrumentIds: string[];
   /** Stock or ETF, when known. */
   instrumentType?: 'STOCK' | 'ETF';
   /** The least certain purchase date across accounts. */
@@ -346,21 +348,38 @@ const sumOrNull = (list: HoldingView[], f: (h: HoldingView) => string | null) =>
   return open.reduce((s, h) => s.plus(f(h)!), ZERO);
 };
 
+/**
+ * The holding a position belongs to. A BSE listing has its own instrument id
+ * (`IN_EQUITY:BSE:X`, so both listings can be priced) but is the same share as `IN_EQUITY:X`.
+ */
+export const holdingKeyOf = (instrumentId: string) =>
+  instrumentId.startsWith('IN_EQUITY:BSE:')
+    ? `IN_EQUITY:${instrumentId.slice('IN_EQUITY:BSE:'.length)}`
+    : instrumentId;
+
 export function groupByInstrument(
   holdings: Record<string, HoldingView>,
   options: { includeClosed?: boolean } = {},
 ): InstrumentRow[] {
   const groups = new Map<string, HoldingView[]>();
   for (const h of Object.values(holdings)) {
-    const list = groups.get(h.instrumentId) ?? [];
+    const key = holdingKeyOf(h.instrumentId);
+    const list = groups.get(key) ?? [];
     list.push(h);
-    groups.set(h.instrumentId, list);
+    groups.set(key, list);
   }
 
   const rows: InstrumentRow[] = [];
   let totalValue = ZERO;
-  for (const [instrumentId, list] of groups) {
+  for (const [, unsorted] of groups) {
+    // The NSE listing first: it names, prices and links the row.
+    const list = [...unsorted].sort(
+      (a, b) =>
+        Number(a.instrumentId.startsWith('IN_EQUITY:BSE:')) -
+        Number(b.instrumentId.startsWith('IN_EQUITY:BSE:')),
+    );
     const first = list[0]!;
+    const instrumentId = first.instrumentId;
     const qty = list.reduce((s, h) => s.plus(h.qty), ZERO);
     if (qty.isZero() && !options.includeClosed) continue;
     const invested = list.reduce((s, h) => s.plus(h.openCost), ZERO);
@@ -418,6 +437,7 @@ export function groupByInstrument(
         }))
         .sort((a, b) => Number(b.value ?? b.invested) - Number(a.value ?? a.invested)),
       positionKeys: list.map((h) => h.key),
+      instrumentIds: [...new Set(list.map((h) => h.instrumentId))],
       ...(first.instrumentType ? { instrumentType: first.instrumentType } : {}),
       dateQuality: list.some((h) => h.dateQuality === 'unknown')
         ? 'unknown'
