@@ -4,3 +4,4 @@ export * from './cagr';
 export * from './ledger';
 export * from './format';
 export * from './book';
+export * from './analytics';
