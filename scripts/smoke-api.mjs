@@ -841,5 +841,302 @@ check(
   JSON.stringify(afterUndo.body?.counts ?? afterUndo.body),
 );
 
+// =================== M3: holdings statements (Groww, INDmoney US) ===================
+// Uses the INVENTED fixtures. ISIN → ticker goes to the live (unofficial) Yahoo search, so the
+// number of resolved rows is reported, not asserted.
+console.log('\n— M3 holdings statements —');
+const { writeXlsx } = await import('../packages/parsers/test/support/write-xlsx.ts');
+const { growwSheet, GROWW_ROWS, GROWW_SHEET_NAME } =
+  await import('../packages/parsers/test/support/fixture-data.ts');
+const growwFile = readFileSync(
+  new URL('../packages/parsers/fixtures/groww-holdings/holdings.xlsx', import.meta.url),
+);
+const indmoneyFile = readFileSync(
+  new URL('../packages/parsers/fixtures/indmoney-us-holdings/holdings.xls', import.meta.url),
+);
+const growwWith = (o) => writeXlsx([{ name: GROWW_SHEET_NAME, rows: growwSheet(o) }]);
+const confirmImportOf = (token, id, body = {}) =>
+  call(token, 'POST', `/api/v1/imports/${id}/confirm`, body);
+
+const ivy = await emulatorUser();
+const jack = await emulatorUser();
+await call(ivy.token, 'POST', '/api/v1/session');
+await call(jack.token, 'POST', '/api/v1/session');
+
+const g1 = await upload(ivy.token, growwFile, 'Stocks_Holdings_Statement_0000000000.xlsx');
+const recon = (preview, id) => preview.body?.reconciliation?.find((c) => c.id === id)?.status;
+check(
+  'Groww statement → 201 preview: 11 new holdings, read as groww.holdings',
+  g1.status === 201 &&
+    g1.body?.kind === 'positions' &&
+    g1.body?.parser === 'groww.holdings@1.0.0' &&
+    g1.body?.counts?.added === 11 &&
+    g1.body?.counts?.needsAttention === 0 &&
+    g1.body?.statementDate === '2026-10-31',
+  JSON.stringify(g1.body?.counts ?? g1.body),
+);
+check(
+  'Groww statement reconciles with its own summary',
+  recon(g1, 'rows') === 'ok' && recon(g1, 'invested') === 'ok' && recon(g1, 'value') === 'ok',
+  JSON.stringify(g1.body?.reconciliation?.map((c) => [c.id, c.status])),
+);
+console.log(
+  `  (ISIN lookup: ${11 - (g1.body?.counts?.unresolved ?? 11)} of 11 resolved to a ticker by the live source)`,
+);
+const g1Doc = JSON.stringify(
+  (await readDoc(`users/${ivy.uid}/imports/${g1.body?.importId}`)) ?? {},
+);
+check(
+  'statement draft stores a file hash, not the file name or the account holder',
+  /"fileHash":\{"stringValue":"[0-9a-f]{64}"\}/.test(g1Doc) &&
+    !g1Doc.includes('Asha Example') &&
+    !g1Doc.includes('0000000000') &&
+    !g1Doc.includes('Stocks_Holdings'),
+);
+check(
+  "another user cannot confirm someone's statement → 404",
+  (await confirmImportOf(jack.token, g1.body?.importId)).status === 404,
+);
+
+const g1c = await confirmImportOf(ivy.token, g1.body?.importId);
+check(
+  'confirm → 11 holdings added',
+  g1c.status === 200 && g1c.body?.kind === 'positions' && g1c.body?.added === 11,
+  JSON.stringify(g1c.body),
+);
+const ibook = await readDoc(`users/${ivy.uid}/book/current`);
+const firstId = g1.body?.rows?.[0]?.instrumentId;
+const firstKey = `import:groww|${firstId}`;
+const investedInFile = (g1.body?.rows ?? []).reduce((s, r) => s + Number(r.investedAmount), 0);
+check(
+  'book: 11 holdings, invested equals the sum of the statement rows',
+  str(field(ibook, 'totals', 'holdingsCount')) === '11' &&
+    Math.abs(Number(str(field(ibook, 'totals', 'invested'))) - investedInFile) < 0.05,
+  JSON.stringify({ totals: field(ibook, 'totals'), investedInFile })?.slice(0, 300),
+);
+check(
+  'holding from a statement: no purchase dates, so XIRR is withheld (NO_DATES), value is known',
+  str(field(ibook, 'holdings', firstKey, 'dateQuality')) === 'unknown' &&
+    Number(str(field(ibook, 'holdings', firstKey, 'value'))) > 0,
+  JSON.stringify(field(ibook, 'holdings', firstKey))?.slice(0, 300),
+);
+const firstInst = await readDoc(`users/${ivy.uid}/instruments/${encodeURIComponent(firstId)}`);
+check(
+  'instrument keeps its ISIN and type',
+  str(field(firstInst, 'isin')) === 'INE029A01011' &&
+    str(field(firstInst, 'instrumentType')) === 'STOCK',
+  JSON.stringify(firstInst?.fields)?.slice(0, 200),
+);
+
+const g1again = await upload(ivy.token, growwFile, 'renamed-copy.xlsx');
+check(
+  'the same statement again (even renamed) → 200 already imported, nothing created',
+  g1again.status === 200 && g1again.body?.alreadyImported === true && !g1again.body?.rows,
+  JSON.stringify(g1again.body)?.slice(0, 200),
+);
+
+// --- a newer statement: bought more of one, sold out of another ---
+const newer = GROWW_ROWS.map((r, i) => (i === 0 ? { ...r, quantity: 50 } : r)).filter(
+  (_, i) => i !== 3,
+);
+const g2 = await upload(ivy.token, growwWith({ rows: newer, asOn: '10-11-2026' }));
+check(
+  'newer statement → diff: 1 changed, 1 removed, 9 unchanged, 0 new',
+  g2.status === 201 &&
+    g2.body?.counts?.changed === 1 &&
+    g2.body?.counts?.removed === 1 &&
+    g2.body?.counts?.unchanged === 9 &&
+    g2.body?.counts?.added === 0 &&
+    g2.body?.olderThanCurrent === false &&
+    g2.body?.rows?.[0]?.previous?.quantity === '37',
+  JSON.stringify(g2.body?.counts ?? g2.body),
+);
+const g2c = await confirmImportOf(ivy.token, g2.body?.importId);
+const ibook2 = await readDoc(`users/${ivy.uid}/book/current`);
+check(
+  'confirm → holdings replaced: 10 left, the changed one now 50 units',
+  g2c.status === 200 &&
+    g2c.body?.changed === 1 &&
+    g2c.body?.removed === 1 &&
+    str(field(ibook2, 'totals', 'holdingsCount')) === '10' &&
+    str(field(ibook2, 'holdings', firstKey, 'qty')) === '50',
+  JSON.stringify(g2c.body),
+);
+
+// --- going back to the older statement needs an explicit yes ---
+const g3 = await upload(ivy.token, growwFile);
+check(
+  'older statement is recognised as older',
+  g3.status === 201 && g3.body?.olderThanCurrent === true,
+  JSON.stringify({ older: g3.body?.olderThanCurrent, counts: g3.body?.counts }),
+);
+const g3no = await confirmImportOf(ivy.token, g3.body?.importId);
+check(
+  'confirming an older statement without accepting → 409 OLDER_STATEMENT',
+  g3no.status === 409 && g3no.body?.error?.code === 'OLDER_STATEMENT',
+  JSON.stringify(g3no.body),
+);
+const g3yes = await confirmImportOf(ivy.token, g3.body?.importId, { acceptOlder: true });
+check(
+  'accepting it → 200, back to 11 holdings',
+  g3yes.status === 200 &&
+    str(field(await readDoc(`users/${ivy.uid}/book/current`), 'totals', 'holdingsCount')) === '11',
+  JSON.stringify(g3yes.body),
+);
+
+// --- INDmoney US: tickers, fractional shares, first-purchase dates, USD ---
+const u1 = await upload(ivy.token, indmoneyFile, 'report.xls');
+check(
+  'INDmoney US report → 201 preview: 9 new, 1 skipped, the odd row flagged',
+  u1.status === 201 &&
+    u1.body?.parser === 'indmoney.us-holdings@1.0.0' &&
+    u1.body?.counts?.added === 9 &&
+    u1.body?.counts?.skipped === 1 &&
+    u1.body?.counts?.unresolved === 0 &&
+    recon(u1, 'row-values') === 'warning' &&
+    u1.body?.rows?.find((r) => r.symbol === 'BA')?.warnings?.length === 1,
+  JSON.stringify(u1.body?.counts ?? u1.body),
+);
+const u1c = await confirmImportOf(ivy.token, u1.body?.importId);
+const ibook3 = await readDoc(`users/${ivy.uid}/book/current`);
+const orclKey = 'import:indmoney-us|US_EQUITY:ORCL';
+check(
+  'confirm → US holdings in USD with an exchange rate, dates marked approximate',
+  u1c.status === 200 &&
+    u1c.body?.added === 9 &&
+    str(field(ibook3, 'holdings', orclKey, 'qty')) === '3.25817364' &&
+    str(field(ibook3, 'holdings', orclKey, 'currency')) === 'USD' &&
+    str(field(ibook3, 'holdings', orclKey, 'dateQuality')) === 'approximate' &&
+    Number(str(field(ibook3, 'holdings', orclKey, 'openCost'))) > 0 &&
+    str(field(ibook3, 'totals', 'holdingsCount')) === '20',
+  JSON.stringify(field(ibook3, 'holdings', orclKey))?.slice(0, 300),
+);
+check(
+  'the Groww statement is untouched by the INDmoney import (separate brokers)',
+  str(field(ibook3, 'holdings', firstKey, 'qty')) === '37',
+);
+// BUG-014: the date quality must survive a recompute (here: a manual refresh after import)
+const ivyRefresh = await call(ivy.token, 'POST', '/api/v1/refresh');
+const ibook4 = await readDoc(`users/${ivy.uid}/book/current`);
+check(
+  'after a refresh, statement holdings keep their date quality (no XIRR without dates)',
+  ivyRefresh.status === 200 &&
+    str(field(ibook4, 'holdings', firstKey, 'dateQuality')) === 'unknown' &&
+    str(field(ibook4, 'holdings', firstKey, 'xirrNote')) === 'NO_DATES' &&
+    str(field(ibook4, 'holdings', orclKey, 'dateQuality')) === 'approximate',
+  JSON.stringify({
+    status: ivyRefresh.status,
+    groww: field(ibook4, 'holdings', firstKey, 'dateQuality'),
+    note: field(ibook4, 'holdings', firstKey, 'xirrNote'),
+    us: field(ibook4, 'holdings', orclKey, 'dateQuality'),
+  }),
+);
+
+// --- holdings whose ISIN cannot be resolved: imported, flagged, then mapped by the user ---
+const kim = await emulatorUser();
+await call(kim.token, 'POST', '/api/v1/session');
+const unknownRows = [
+  {
+    name: 'UNKNOWN ONE LTD',
+    isin: 'INE999Z99991',
+    quantity: 10,
+    trueAverage: 100,
+    closingPrice: 120,
+  },
+  {
+    name: 'UNKNOWN TWO LTD',
+    isin: 'INE999Z99992',
+    quantity: 20,
+    trueAverage: 50,
+    closingPrice: 45,
+  },
+];
+const k1 = await upload(kim.token, growwWith({ rows: unknownRows }));
+check(
+  'unresolved ISINs are kept in the preview and flagged, not dropped',
+  k1.status === 201 &&
+    k1.body?.counts?.added === 2 &&
+    k1.body?.counts?.unresolved === 2 &&
+    k1.body?.rows?.every((r) => r.unresolved === true),
+  JSON.stringify(k1.body?.counts ?? k1.body),
+);
+const badMap = await confirmImportOf(kim.token, k1.body?.importId, {
+  mappings: [{ line: k1.body?.rows?.[0]?.line, symbol: '../v7/quote?x=' }],
+});
+check(
+  'a ticker that could alter a provider URL → 422',
+  badMap.status === 422,
+  JSON.stringify(badMap.body),
+);
+const k1c = await confirmImportOf(kim.token, k1.body?.importId, {
+  mappings: [{ line: k1.body?.rows?.[0]?.line, symbol: 'zztesta', exchange: 'NSE' }],
+});
+const kbook = await readDoc(`users/${kim.uid}/book/current`);
+const unmappedKey = 'import:groww|IN_EQUITY:INE999Z99992';
+check(
+  'confirm with one ticker typed in: one mapped, one still unmapped but valued from the statement',
+  k1c.status === 200 &&
+    k1c.body?.added === 2 &&
+    k1c.body?.unresolved === 1 &&
+    str(field(kbook, 'holdings', 'import:groww|IN_EQUITY:ZZTESTA', 'qty')) === '10' &&
+    str(field(kbook, 'holdings', unmappedKey, 'value')) === '900' &&
+    str(field(kbook, 'holdings', unmappedKey, 'price', 'source')) === 'manual',
+  JSON.stringify({ r: k1c.body, h: field(kbook, 'holdings', unmappedKey) })?.slice(0, 400),
+);
+const mapPath = `/api/v1/instruments/${encodeURIComponent('IN_EQUITY:INE999Z99992')}/symbol`;
+check(
+  "another user cannot map someone's holding → 404",
+  (await call(jack.token, 'PUT', mapPath, { symbol: 'ZZTESTB' })).status === 404,
+);
+const mapped = await call(kim.token, 'PUT', mapPath, { symbol: 'zztestb', exchange: 'BSE' });
+const kbook2 = await readDoc(`users/${kim.uid}/book/current`);
+check(
+  'mapping after import moves the holding to the ticker, with its price',
+  mapped.status === 200 &&
+    mapped.body?.instrumentId === 'IN_EQUITY:BSE:ZZTESTB' &&
+    mapped.body?.moved === 1 &&
+    str(field(kbook2, 'holdings', 'import:groww|IN_EQUITY:BSE:ZZTESTB', 'qty')) === '20' &&
+    str(field(kbook2, 'holdings', 'import:groww|IN_EQUITY:BSE:ZZTESTB', 'value')) === '900' &&
+    field(kbook2, 'holdings', unmappedKey) === undefined &&
+    (await readDoc(
+      `users/${kim.uid}/instruments/${encodeURIComponent('IN_EQUITY:INE999Z99992')}`,
+    )) === null,
+  JSON.stringify(mapped.body),
+);
+check(
+  'mapping it again → 404 (it no longer exists under the ISIN); a mapped holding → 409',
+  (await call(kim.token, 'PUT', mapPath, { symbol: 'ZZTESTC' })).status === 404 &&
+    (
+      await call(
+        kim.token,
+        'PUT',
+        `/api/v1/instruments/${encodeURIComponent('IN_EQUITY:ZZTESTA')}/symbol`,
+        { symbol: 'ZZTESTC' },
+      )
+    ).status === 409,
+);
+
+// --- files that cannot be used say why ---
+const damaged = await upload(kim.token, growwFile.subarray(0, 80));
+check(
+  'damaged Excel file → 422 CORRUPT_FILE',
+  damaged.status === 422 && damaged.body?.error?.code === 'CORRUPT_FILE',
+  JSON.stringify(damaged.body),
+);
+const missingCols = await upload(
+  kim.token,
+  growwWith({
+    header: ['Stock Name', 'ISIN', 'Buy value'],
+    tableRows: [['X LTD', 'INE000A01000', 5]],
+  }),
+);
+check(
+  'near miss → 422 naming the missing columns',
+  missingCols.status === 422 &&
+    /looks like a Groww holdings statement/.test(missingCols.body?.error?.message ?? '') &&
+    /Quantity, Average buy price/.test(missingCols.body?.error?.message ?? ''),
+  JSON.stringify(missingCols.body)?.slice(0, 300),
+);
+
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll API smoke checks passed');
 process.exit(failures ? 1 : 0);
