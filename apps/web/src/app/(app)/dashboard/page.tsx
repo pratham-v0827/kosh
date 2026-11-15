@@ -6,6 +6,7 @@ import { Info, PiggyBank, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { AllocationCard } from '@/components/dashboard/allocation-card';
+import { BenchmarkCard } from '@/components/dashboard/benchmark-card';
 import { InsightsCard } from '@/components/dashboard/insights-card';
 import { sourceLabel } from '@/components/dashboard/labels';
 import { RangePicker, ValueChart } from '@/components/dashboard/value-chart';
@@ -16,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useBook, useSeries } from '@/lib/hooks';
+import { useBenchmarkIndices, useBook, useSeries } from '@/lib/hooks';
 
 function Explain({ children }: { children: string }) {
   return (
@@ -55,6 +56,7 @@ function Kpi({
 export default function DashboardPage() {
   const book = useBook();
   const series = useSeries();
+  const indices = useBenchmarkIndices();
   const f = useFormat();
   const [range, setRange] = useState<ChartRange>('3M');
   const holdings = book.status === 'ready' ? book.data?.holdings : undefined;
@@ -224,6 +226,8 @@ export default function DashboardPage() {
         <RangePicker value={range} onChange={setRange} />
         <ValueChart series={series} range={range} asOf={data.asOf} />
       </section>
+
+      <BenchmarkCard holdings={data.holdings} asOf={data.asOf} indices={indices} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <AllocationCard holdings={data.holdings} />

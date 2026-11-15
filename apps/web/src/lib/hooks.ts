@@ -1,6 +1,13 @@
 'use client';
 
-import type { BookTotals, FxInfo, HoldingView } from '@kosh/core';
+import {
+  BENCHMARK_IDS,
+  type BenchmarkId,
+  type BookTotals,
+  type FxInfo,
+  type HoldingView,
+  type IndexPoint,
+} from '@kosh/core';
 import { DEFAULT_SETTINGS, type Settings } from '@kosh/contracts';
 import { collection, doc, onSnapshot, query, type Timestamp, where } from 'firebase/firestore';
 import { useTheme } from 'next-themes';
@@ -137,6 +144,46 @@ export function useSeries(): Loadable<SeriesPointView[]> {
       },
       (e) => setState({ status: 'error', error: e.message }),
     );
+  }, [uid]);
+  return uid ? state : { status: 'loading' };
+}
+
+export type IndexCloses = Partial<Record<BenchmarkId, IndexPoint[]>>;
+
+/**
+ * Daily closes of the benchmark indices (shared market data, `indices/{id}/years/{yyyy}`), oldest
+ * first. Ready once every index has answered; an index with no data yet is simply missing.
+ */
+export function useBenchmarkIndices(): Loadable<IndexCloses> {
+  const { user } = useAuth();
+  const [state, setState] = useState<Loadable<IndexCloses>>({ status: 'loading' });
+  const uid = user?.uid;
+  useEffect(() => {
+    if (!uid) return;
+    const data: IndexCloses = {};
+    const answered = new Set<BenchmarkId>();
+    const unsubs = BENCHMARK_IDS.map((id) =>
+      onSnapshot(
+        collection(clientDb(), `indices/${id}/years`),
+        (snap) => {
+          const points: IndexPoint[] = [];
+          for (const d of snap.docs) {
+            const days = (d.get('d') ?? {}) as Record<string, unknown>;
+            for (const [date, close] of Object.entries(days)) {
+              if (typeof close === 'number' && close > 0) points.push({ date, close });
+            }
+          }
+          points.sort((a, b) => a.date.localeCompare(b.date));
+          if (points.length > 0) data[id] = points;
+          else delete data[id];
+          answered.add(id);
+          if (answered.size === BENCHMARK_IDS.length)
+            setState({ status: 'ready', data: { ...data } });
+        },
+        (e) => setState({ status: 'error', error: e.message }),
+      ),
+    );
+    return () => unsubs.forEach((u) => u());
   }, [uid]);
   return uid ? state : { status: 'loading' };
 }

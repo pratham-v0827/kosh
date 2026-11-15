@@ -1,5 +1,11 @@
 import { ASSET_CLASS_LABELS } from '@kosh/contracts';
-import type { AllocationBy, AssetClass } from '@kosh/core';
+import type { AllocationBy, AssetClass, BenchmarkId } from '@kosh/core';
+
+export const BENCHMARK_LABEL: Record<BenchmarkId, string> = {
+  NIFTY50: 'Nifty 50',
+  SENSEX: 'Sensex',
+  SP500: 'S&P 500',
+};
 
 /** Human names for the keys the analytics functions return. */
 export function accountLabel(accountId: string): string {
