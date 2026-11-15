@@ -119,6 +119,26 @@ describe('benchmark index closes (M3)', () => {
     await assertFails(anon().collection('priceHistory/IN_EQUITY:TCS/years').get());
     await assertFails(alice().doc('priceHistory/IN_EQUITY:TCS/years/2026').set({ d: {} }));
   });
+
+  it('SEC-015: nobody can list which shares have prices or history (that is what others hold)', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.doc('priceHistory/IN_EQUITY:TCS').set({ to: '2026-11-13' });
+      await db.doc('prices/IN_EQUITY:TCS').set({ price: '1' });
+      await db.doc('fxHistory/2026').set({ d: {} });
+      await db.doc('instruments/IN_EQUITY:TCS').set({ name: 'TCS' });
+    });
+    for (const c of ['priceHistory', 'prices', 'indices', 'fx', 'fxHistory', 'instruments']) {
+      await assertFails(alice().collection(c).get());
+      await assertFails(admin().collection(c).get());
+    }
+    // Reading one known document (or a known share's yearly closes) still works.
+    await assertSucceeds(alice().doc('priceHistory/IN_EQUITY:TCS').get());
+    await assertSucceeds(alice().collection('priceHistory/IN_EQUITY:TCS/years').get());
+    await assertSucceeds(alice().doc('prices/IN_EQUITY:TCS').get());
+    await assertSucceeds(alice().doc('fxHistory/2026').get());
+    await assertSucceeds(alice().doc('instruments/IN_EQUITY:TCS').get());
+  });
 });
 
 describe('shared provider budgets (M2.1)', () => {

@@ -79,19 +79,21 @@ service cloud.firestore {
     }
 
     // ---------- public reference data (no user data) ----------
-    match /instruments/{id} { allow read: if signedIn(); allow write: if false; }
-    match /prices/{id}      { allow read: if signedIn(); allow write: if false; }
-    match /fx/{id}          { allow read: if signedIn(); allow write: if false; }
-    match /fxHistory/{id}   { allow read: if signedIn(); allow write: if false; }
+    // SEC-015: get only, never list. These documents exist only for shares someone holds, so a
+    // listing would tell any user what the instance's other users own.
+    match /instruments/{id} { allow get: if signedIn(); allow write: if false; }
+    match /prices/{id}      { allow get: if signedIn(); allow write: if false; }
+    match /fx/{id}          { allow get: if signedIn(); allow write: if false; }
+    match /fxHistory/{id}   { allow get: if signedIn(); allow write: if false; }
     // Benchmark index closes (Nifty 50, Sensex, S&P 500): one document per index, yearly children.
     match /indices/{id} {
-      allow read: if signedIn();
+      allow get: if signedIn();
       allow write: if false;
       match /years/{year} { allow read: if signedIn(); allow write: if false; }
     }
     // Daily price history of listed instruments (same shape as indices; no user data).
     match /priceHistory/{id} {
-      allow read: if signedIn();
+      allow get: if signedIn();
       allow write: if false;
       match /years/{year} { allow read: if signedIn(); allow write: if false; }
     }
