@@ -1,0 +1,8 @@
+date,type,asset_class,name,symbol,exchange,quantity,price,fees,amount,ratio,fx_rate,reference,note
+2024-04-01,buy,in_equity,Reliance Industries,RELIANCE,NSE,10,2900.50,15.20,,,,ORD-1001,Example: delete these rows
+2024-04-15,buy,mutual_fund,ICICI Prudential Gilt Fund - Direct Growth,120590,,25.123,95.5,,,,,,AMFI scheme code goes in symbol
+2024-06-14,buy,us_equity,Apple Inc.,AAPL,,5,190.25,1,,,83.45,,Price in USD; fx_rate is INR per USD (blank = looked up)
+2024-07-01,dividend,in_equity,Reliance Industries,RELIANCE,NSE,,,,100,,,,
+2024-08-01,split,in_equity,Reliance Industries,RELIANCE,NSE,,,,,1:2,,,Each share becomes 2
+2024-09-10,sell,in_equity,Reliance Industries,RELIANCE,NSE,4,1520,12,,,,ORD-1042,
+2024-11-05,buy,unlisted,Acme Technologies (pre-IPO),,,100,310,,,,,,No symbol needed

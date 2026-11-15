@@ -82,3 +82,62 @@ export function appendHistory<T>(
 ): T[] {
   return [...(history ?? []), entry].slice(-max);
 }
+
+// ---------- imports ----------
+
+/** File previews per user per day (each one reads the whole ledger and parses a file). */
+export const IMPORT_PREVIEWS_PER_DAY = 30;
+/** Imported rows per user per day. Every row is a Firestore write on a shared free quota. */
+export const IMPORT_ROWS_PER_DAY = 2000;
+/**
+ * Writes one import may make (rows, plus two per new holding, plus bookkeeping). Keeps a confirm
+ * comfortably inside a single Firestore transaction.
+ */
+export const IMPORT_WRITE_BUDGET = 480;
+
+export interface ImportPreviewCounters {
+  importPreviewDay: string;
+  importPreviewsToday: number;
+}
+
+export function nextImportPreviewCounters(
+  meta: Partial<ImportPreviewCounters> | undefined,
+  today: string,
+): ImportPreviewCounters {
+  const used = meta?.importPreviewDay === today ? Number(meta.importPreviewsToday ?? 0) : 0;
+  if (used >= IMPORT_PREVIEWS_PER_DAY) {
+    throw new HttpError(
+      429,
+      'IMPORT_DAILY_LIMIT',
+      `Daily limit of ${IMPORT_PREVIEWS_PER_DAY} file uploads reached. Try again tomorrow.`,
+      { retryAfter: 3600 },
+    );
+  }
+  return { importPreviewDay: today, importPreviewsToday: used + 1 };
+}
+
+export interface ImportRowCounters {
+  importRowDay: string;
+  importRowsToday: number;
+}
+
+export function nextImportRowCounters(
+  meta: Partial<ImportRowCounters> | undefined,
+  today: string,
+  rows: number,
+): ImportRowCounters {
+  const used = meta?.importRowDay === today ? Number(meta.importRowsToday ?? 0) : 0;
+  if (used + rows > IMPORT_ROWS_PER_DAY) {
+    throw new HttpError(
+      429,
+      'IMPORT_ROW_LIMIT',
+      `You can import ${IMPORT_ROWS_PER_DAY} rows a day (${IMPORT_ROWS_PER_DAY - used} left today).`,
+      { retryAfter: 3600, remaining: Math.max(0, IMPORT_ROWS_PER_DAY - used) },
+    );
+  }
+  return { importRowDay: today, importRowsToday: used + rows };
+}
+
+/** Writes an import of `rows` new rows and `newInstruments` new holdings will make. */
+export const importWrites = (rows: number, newInstruments: number) =>
+  rows + 2 * newInstruments + 10;

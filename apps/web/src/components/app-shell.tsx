@@ -1,6 +1,6 @@
 'use client';
 
-import { History, LayoutDashboard, List, LogOut, Plus, Settings } from 'lucide-react';
+import { FileUp, History, LayoutDashboard, List, LogOut, Plus, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -22,6 +22,7 @@ const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/holdings', label: 'Holdings', icon: List },
   { href: '/history', label: 'History', icon: History },
+  { href: '/import', label: 'Import', icon: FileUp },
   { href: '/manual/new', label: 'Add holding', icon: Plus },
   { href: '/settings', label: 'Settings', icon: Settings },
 ] as const;
@@ -107,7 +108,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Mobile bottom navigation (≤ md). Targets are ≥ 44px tall. */}
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
       >
         {NAV.filter((n) => n.href !== '/history').map((n) => (
           <Link

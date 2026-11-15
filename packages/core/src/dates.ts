@@ -13,7 +13,15 @@ export function toEpochDay(input: DateInput): number {
     const [, y, mo, d] = m;
     const ms = Date.UTC(Number(y), Number(mo) - 1, Number(d));
     const check = new Date(ms);
-    if (check.getUTCDate() !== Number(d)) throw new RangeError(`Invalid calendar date "${input}"`);
+    // BUG-013: all three parts must survive the round trip. Checking the day alone let month 13+
+    // (which rolls into the next year) and day 0 through.
+    if (
+      check.getUTCFullYear() !== Number(y) ||
+      check.getUTCMonth() !== Number(mo) - 1 ||
+      check.getUTCDate() !== Number(d)
+    ) {
+      throw new RangeError(`Invalid calendar date "${input}"`);
+    }
     return ms / DAY_MS;
   }
   if (Number.isNaN(input.getTime())) throw new RangeError('Invalid Date');

@@ -1,0 +1,27 @@
+{
+  "name": "@kosh/parsers",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kosh statement parsers: detect, validate, parse and normalise broker/registrar exports. In memory only; nothing is written to disk.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test scripts"
+  },
+  "dependencies": {
+    "@kosh/contracts": "workspace:*",
+    "@kosh/core": "workspace:*",
+    "papaparse": "^5.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/papaparse": "^5.5.2",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

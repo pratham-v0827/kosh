@@ -42,3 +42,28 @@ export async function api<T = unknown>(
   }
   return data as T;
 }
+
+/** Upload one file to a Kosh API route as multipart form data (field "file"). */
+export async function apiUpload<T = unknown>(path: string, file: File): Promise<T> {
+  const user = clientAuth().currentUser;
+  if (!user) throw new ApiRequestError(401, 'UNAUTHENTICATED', 'Please sign in');
+  const token = await user.getIdToken();
+  const form = new FormData();
+  form.set('file', file);
+  // No Content-Type header: the browser adds the multipart boundary itself.
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const data = (await res.json().catch(() => null)) as (T & Partial<ApiError>) | null;
+  if (!res.ok) {
+    const err = data?.error;
+    throw new ApiRequestError(
+      res.status,
+      err?.code ?? 'HTTP_ERROR',
+      err?.message ?? res.statusText,
+    );
+  }
+  return data as T;
+}
