@@ -24,6 +24,7 @@ export {
   type IndexHistory,
 } from './providers/yahoo';
 export { type IsinLookup, type IsinMatch, lookupIsin, parseIsinSearch } from './isin';
+export { fetchDailyHistory, type HistorySource, historySourceFor, parseMfHistory } from './history';
 export {
   alphaVantageProvider,
   parseGlobalQuote,

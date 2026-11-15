@@ -187,15 +187,25 @@ export type IndexHistory =
   | { status: 'unavailable'; reason: string };
 
 /** Daily closes of a benchmark index. Never throws; respects ENABLE_UNOFFICIAL_YAHOO. */
-export async function fetchIndexHistory(
+export function fetchIndexHistory(
   id: BenchmarkId,
+  range: '1mo' | '1y' | '10y',
+  ctx: ProviderContext,
+): Promise<IndexHistory> {
+  const { symbol, currency } = BENCHMARKS[id];
+  return fetchYahooHistory(symbol, currency, range, ctx);
+}
+
+/** Daily closes of a Yahoo symbol. Never throws; respects ENABLE_UNOFFICIAL_YAHOO. */
+export async function fetchYahooHistory(
+  symbol: string,
+  currency: Currency,
   range: '1mo' | '1y' | '10y',
   ctx: ProviderContext,
 ): Promise<IndexHistory> {
   if ((ctx.env.ENABLE_UNOFFICIAL_YAHOO ?? 'true').toLowerCase() === 'false') {
     return { status: 'unavailable', reason: 'disabled by configuration' };
   }
-  const { symbol, currency } = BENCHMARKS[id];
   const url = `${BASE}${encodeURIComponent(symbol)}?range=${range}&interval=1d`;
   try {
     const body = await throttle(() =>
