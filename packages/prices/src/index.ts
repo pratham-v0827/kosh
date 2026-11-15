@@ -76,3 +76,12 @@ export function coverage(env: Record<string, string | undefined>, providers = DE
     };
   });
 }
+export {
+  createMockFetch,
+  MOCK_CRYPTO,
+  MOCK_ISINS,
+  MOCK_NAVS,
+  MOCK_PRICES,
+  MOCK_USD_INR,
+  mockPrice,
+} from './mock';
