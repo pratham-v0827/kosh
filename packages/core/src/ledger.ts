@@ -99,6 +99,11 @@ export interface Position {
   lots: Lot[];
   /** INR cash flows aggregated per day, investor's view (buys negative). */
   cashflows: [date: string, amount: number][];
+  /**
+   * The same flows in the position's own currency. Only for non-INR positions (for INR it would
+   * equal `cashflows`). Used to compare US holdings with a US index in dollars.
+   */
+  cashflowsCcy?: [date: string, amount: number][];
 }
 
 export type LedgerErrorCode =
@@ -156,6 +161,7 @@ interface MutablePosition {
   firstAcquired: string | null;
   dateQuality: DateQuality;
   flows: Map<string, Decimal>;
+  flowsCcy: Map<string, Decimal>;
 }
 
 const ZERO = new Decimal(0);
@@ -171,8 +177,10 @@ function dec(value: string | undefined): Decimal | null {
   }
 }
 
-function addFlow(p: MutablePosition, date: string, amount: Decimal) {
-  p.flows.set(date, (p.flows.get(date) ?? ZERO).plus(amount));
+/** Record a cash flow in INR and in the position's own currency. */
+function addFlow(p: MutablePosition, date: string, inr: Decimal, ccy: Decimal) {
+  p.flows.set(date, (p.flows.get(date) ?? ZERO).plus(inr));
+  p.flowsCcy.set(date, (p.flowsCcy.get(date) ?? ZERO).plus(ccy));
 }
 
 /** Build positions from an unordered list of ledger transactions. Pure and deterministic. */
@@ -223,6 +231,7 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
           firstAcquired: null,
           dateQuality: 'exact',
           flows: new Map(),
+          flowsCcy: new Map(),
         };
         book.set(key, p);
       }
@@ -260,7 +269,7 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
         pos.firstAcquired ??= t.tradeDate;
         const quality = t.dateQuality ?? 'exact';
         if (QUALITY_RANK[quality] > QUALITY_RANK[pos.dateQuality]) pos.dateQuality = quality;
-        addFlow(pos, t.tradeDate, grossInr.neg());
+        addFlow(pos, t.tradeDate, grossInr.neg(), grossCcy.neg());
         break;
       }
 
@@ -298,10 +307,11 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
           remaining = remaining.minus(take);
           if (lot.qty.isZero()) pos.lots.shift();
         }
-        const proceeds = qty.times(price).minus(fees).times(fx);
+        const proceedsCcy = qty.times(price).minus(fees);
+        const proceeds = proceedsCcy.times(fx);
         pos.realised = pos.realised.plus(proceeds.minus(matchedCost));
         pos.fees = pos.fees.plus(fees.times(fx));
-        addFlow(pos, t.tradeDate, proceeds);
+        addFlow(pos, t.tradeDate, proceeds, proceedsCcy);
         break;
       }
 
@@ -358,10 +368,10 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
         const inr = amount.times(fx);
         if (t.type === 'DIVIDEND') {
           pos.dividends = pos.dividends.plus(inr);
-          addFlow(pos, t.tradeDate, inr);
+          addFlow(pos, t.tradeDate, inr, amount);
         } else {
           pos.fees = pos.fees.plus(inr);
-          addFlow(pos, t.tradeDate, inr.neg());
+          addFlow(pos, t.tradeDate, inr.neg(), amount.neg());
         }
         break;
       }
@@ -395,12 +405,17 @@ export function buildPositions(txns: readonly LedgerTxn[]): BookResult {
         unitCostCcy: l.unitCostCcy.toDecimalPlaces(6).toString(),
         fx: l.fx.toString(),
       })),
-      cashflows: [...p.flows.entries()]
-        .sort(([a], [b]) => toEpochDay(a) - toEpochDay(b))
-        .map(([d, v]) => [d, v.toDecimalPlaces(2).toNumber()]),
+      cashflows: sortedFlows(p.flows),
+      ...(p.currency !== 'INR' ? { cashflowsCcy: sortedFlows(p.flowsCcy) } : {}),
     };
   }
   return { positions, errors };
+}
+
+function sortedFlows(flows: Map<string, Decimal>): [string, number][] {
+  return [...flows.entries()]
+    .sort(([a], [b]) => toEpochDay(a) - toEpochDay(b))
+    .map(([d, v]) => [d, v.toDecimalPlaces(2).toNumber()]);
 }
 
 export interface Valuation {

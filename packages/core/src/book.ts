@@ -56,11 +56,16 @@ export interface FxInfo {
 
 export type XirrNote = 'NO_PRICE' | 'NO_FX' | 'TOO_SHORT' | 'NOT_COMPUTABLE' | 'NO_DATES';
 
-export interface HoldingView extends Omit<Position, 'cashflows'> {
+export interface HoldingView extends Omit<Position, 'cashflows' | 'cashflowsCcy'> {
   name: string;
   assetClass: AssetClass;
   symbol: string | null;
+  /** Stock or exchange-traded fund (equities from a statement); absent otherwise. */
+  instrumentType?: 'STOCK' | 'ETF';
+  isin?: string;
+  // Stored as maps: Firestore cannot hold arrays of arrays.
   cashflows: { d: string; a: number }[];
+  cashflowsCcy?: { d: string; a: number }[];
   price: PriceInfo | null;
   /** fresh/stale from the price; "missing" when there is none (or no FX for a USD price). */
   priceStatus: PriceStatus | 'missing';
@@ -207,12 +212,17 @@ export function composeBook(
         : 'fresh'
       : 'missing';
 
+    const { cashflowsCcy: _ccyTuples, ...position } = p;
+    void _ccyTuples;
     holdings[key] = {
-      ...p,
+      ...position,
       name: meta.name,
       assetClass: meta.assetClass,
       symbol: meta.symbol,
+      ...(meta.instrumentType ? { instrumentType: meta.instrumentType } : {}),
+      ...(meta.isin ? { isin: meta.isin } : {}),
       cashflows: p.cashflows.map(([d, a]) => ({ d, a })),
+      ...(p.cashflowsCcy ? { cashflowsCcy: p.cashflowsCcy.map(([d, a]) => ({ d, a })) } : {}),
       price,
       priceStatus: status,
       fxRate: needsFx && fx ? fx.rate : null,
@@ -309,8 +319,25 @@ export interface InstrumentRow {
   realised: string;
   /** Share of total priced value, 0..1; null when unpriced. */
   weight: number | null;
-  accounts: { accountId: string; qty: string }[];
+  /** The same holding in each account (broker), largest first. */
+  accounts: AccountShare[];
   positionKeys: string[];
+  /** Stock or ETF, when known. */
+  instrumentType?: 'STOCK' | 'ETF';
+  /** The least certain purchase date across accounts. */
+  dateQuality: Position['dateQuality'];
+}
+
+export interface AccountShare {
+  accountId: string;
+  qty: string;
+  /** INR open cost in this account. */
+  invested: string;
+  /** INR value in this account; null when unpriced. */
+  value: string | null;
+  /** Average cost per unit in the holding's own currency. */
+  avgCostCcy: string;
+  dateQuality: Position['dateQuality'];
 }
 
 const sumOrNull = (list: HoldingView[], f: (h: HoldingView) => string | null) => {
@@ -379,8 +406,24 @@ export function groupByInstrument(
         .toDecimalPlaces(2)
         .toString(),
       weight: null,
-      accounts: list.map((h) => ({ accountId: h.accountId, qty: h.qty })),
+      accounts: list
+        .filter((h) => new Decimal(h.qty).gt(0) || options.includeClosed)
+        .map((h) => ({
+          accountId: h.accountId,
+          qty: h.qty,
+          invested: new Decimal(h.openCost).toDecimalPlaces(2).toString(),
+          value: h.value,
+          avgCostCcy: h.avgCostCcy,
+          dateQuality: h.dateQuality,
+        }))
+        .sort((a, b) => Number(b.value ?? b.invested) - Number(a.value ?? a.invested)),
       positionKeys: list.map((h) => h.key),
+      ...(first.instrumentType ? { instrumentType: first.instrumentType } : {}),
+      dateQuality: list.some((h) => h.dateQuality === 'unknown')
+        ? 'unknown'
+        : list.some((h) => h.dateQuality === 'approximate')
+          ? 'approximate'
+          : 'exact',
     });
   }
   for (const r of rows) {
