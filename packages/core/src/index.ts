@@ -5,3 +5,4 @@ export * from './ledger';
 export * from './format';
 export * from './book';
 export * from './analytics';
+export * from './market-cap';
