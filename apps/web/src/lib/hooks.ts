@@ -102,3 +102,41 @@ export function useTransactions(instrumentId: string): Loadable<TxnRow[]> {
   }, [uid, instrumentId]);
   return state;
 }
+
+export interface SeriesPointView {
+  /** YYYY-MM-DD */
+  date: string;
+  value: number;
+  invested: number;
+}
+
+/**
+ * The user's daily value history, from one `series/{year}` document per year (written by every
+ * refresh and by the daily job). Sorted by date.
+ */
+export function useSeries(): Loadable<SeriesPointView[]> {
+  const { user } = useAuth();
+  const [state, setState] = useState<Loadable<SeriesPointView[]>>({ status: 'loading' });
+  const uid = user?.uid;
+  useEffect(() => {
+    if (!uid) return;
+    return onSnapshot(
+      collection(clientDb(), `users/${uid}/series`),
+      (snap) => {
+        const points: SeriesPointView[] = [];
+        for (const d of snap.docs) {
+          const days = (d.get('d') ?? {}) as Record<string, { v?: number; inv?: number }>;
+          for (const [date, p] of Object.entries(days)) {
+            if (typeof p?.v === 'number' && typeof p?.inv === 'number') {
+              points.push({ date, value: p.v, invested: p.inv });
+            }
+          }
+        }
+        points.sort((a, b) => a.date.localeCompare(b.date));
+        setState({ status: 'ready', data: points });
+      },
+      (e) => setState({ status: 'error', error: e.message }),
+    );
+  }, [uid]);
+  return uid ? state : { status: 'loading' };
+}
