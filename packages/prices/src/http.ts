@@ -1,3 +1,4 @@
+import { toEpochDay } from '@kosh/core';
 import type { ProviderContext, Quote } from './types';
 
 /** Identifies Kosh honestly. Providers must be accessed politely: no spoofing, no bot-check evasion. */
@@ -140,7 +141,15 @@ export function parseIndianDate(s: string): string | null {
   const m = /^(\d{2})-([A-Za-z]{3}|\d{2})-(\d{4})$/.exec(s.trim());
   if (!m) return null;
   const mm = /^\d+$/.test(m[2]!) ? m[2]! : months[m[2]!.toLowerCase()];
-  return mm ? `${m[3]}-${mm}-${m[1]}` : null;
+  if (!mm) return null;
+  const iso = `${m[3]}-${mm}-${m[1]}`;
+  // BUG-017: "31-02-2026" used to come back as "2026-02-31". Only real calendar dates pass.
+  try {
+    toEpochDay(iso);
+    return iso;
+  } catch {
+    return null;
+  }
 }
 
 /** End of an Indian trading/NAV day, as an ISO instant (15:30 IST = 10:00 UTC). */
