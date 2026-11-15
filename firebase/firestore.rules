@@ -83,6 +83,12 @@ service cloud.firestore {
     match /prices/{id}      { allow read: if signedIn(); allow write: if false; }
     match /fx/{id}          { allow read: if signedIn(); allow write: if false; }
     match /fxHistory/{id}   { allow read: if signedIn(); allow write: if false; }
+    // Benchmark index closes (Nifty 50, Sensex, S&P 500): one document per index, yearly children.
+    match /indices/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+      match /years/{year} { allow read: if signedIn(); allow write: if false; }
+    }
 
     // oauthClients, oauthGrants, oauthTokens, rateLimits, health → default deny (server only)
   }

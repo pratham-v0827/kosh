@@ -429,6 +429,19 @@ check(
   c2b.users?.processed === 0,
   JSON.stringify(c2b.users),
 );
+check(
+  'cron reports on every benchmark index; the second run asks Yahoo for none of them',
+  ['NIFTY50', 'SENSEX', 'SP500'].every(
+    (id) =>
+      typeof c1b.prices?.indices?.[id] === 'string' && c2b.prices?.indices?.[id] === 'skipped',
+  ),
+  JSON.stringify([c1b.prices?.indices, c2b.prices?.indices]),
+);
+const nifty = await readDoc('indices/NIFTY50');
+check(
+  'index document holds market data only',
+  !!nifty && str(field(nifty, 'symbol')) === '^NSEI' && !JSON.stringify(nifty).includes(carol.uid),
+);
 
 // =================== Phase 2 audit regressions (docs/audits/phase2-bugs.md) ===================
 console.log('\n— audit regressions —');

@@ -4,6 +4,7 @@ import { DEFAULT_PROVIDERS, type PriceTarget, refreshQuotes } from '@kosh/prices
 import { FieldPath } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
 import { HttpError } from './http';
+import { refreshIndices } from './indices';
 import {
   applyLedgerChange,
   istToday,
@@ -102,7 +103,9 @@ export async function refreshTrackedInstruments() {
     ctx: providerContext(now),
   });
   const fx = await refreshFx(now, true);
+  const indices = await refreshIndices(now);
   return {
+    indices,
     tracked: targets.length,
     fetched: r.fetched,
     problems: r.errors,

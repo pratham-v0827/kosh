@@ -94,6 +94,24 @@ describe('snapshots, series and shared market data (M2)', () => {
   });
 });
 
+describe('benchmark index closes (M3)', () => {
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.doc('indices/NIFTY50').set({ symbol: '^NSEI', currency: 'INR' });
+      await db.doc('indices/NIFTY50/years/2026').set({ d: { '2026-11-13': 26000.5 } });
+    });
+  });
+
+  it('signed-in users read index closes; nobody writes them; signed-out users read nothing', async () => {
+    await assertSucceeds(alice().doc('indices/NIFTY50').get());
+    await assertSucceeds(alice().collection('indices/NIFTY50/years').get());
+    await assertFails(anon().doc('indices/NIFTY50/years/2026').get());
+    await assertFails(alice().doc('indices/NIFTY50/years/2026').set({ d: {} }));
+    await assertFails(admin().doc('indices/NIFTY50').set({ symbol: 'X' }));
+  });
+});
+
 describe('shared provider budgets (M2.1)', () => {
   it('no client (user or admin) can read or tamper with the Alpha Vantage daily budget', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
