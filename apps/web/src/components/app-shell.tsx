@@ -1,9 +1,19 @@
 'use client';
 
-import { FileUp, History, LayoutDashboard, List, LogOut, Plus, Settings } from 'lucide-react';
+import {
+  FileUp,
+  History,
+  LayoutDashboard,
+  List,
+  LogOut,
+  Plus,
+  Search,
+  Settings,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { CommandPalette, openCommandPalette } from '@/components/command-palette';
 import { Logo } from '@/components/logo';
 import { RefreshControl } from '@/components/refresh-control';
 import { useAuth } from '@/components/providers/auth-provider';
@@ -15,6 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -79,6 +90,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {user?.email ?? 'Signed in'}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={openCommandPalette}>
+                  <Search aria-hidden /> Search and commands
+                  <DropdownMenuShortcut>Ctrl K</DropdownMenuShortcut>
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => router.push('/history')}>
                   <History aria-hidden /> Refresh history
                 </DropdownMenuItem>
@@ -98,6 +113,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+      <CommandPalette />
 
       <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-24 md:pb-10">
         {children}
