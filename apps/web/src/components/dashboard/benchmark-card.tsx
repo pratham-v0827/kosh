@@ -92,7 +92,8 @@ function MarketBlock({ group, indices }: { group: BenchmarkGroup; indices: Index
               : 'Needs holdings with purchase dates (holdings statements have none).'}
         </p>
       ) : (
-        <dl className="mt-2 divide-y text-sm">
+        // data-volatile: returns age by the day (end-to-end screenshots mask them).
+        <dl className="mt-2 divide-y text-sm" data-volatile>
           <div className="flex items-baseline justify-between gap-3 py-1.5">
             <dt>Your holdings</dt>
             <dd className="num font-semibold">{pct(p.rate)}</dd>

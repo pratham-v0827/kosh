@@ -53,6 +53,8 @@ packages/parsers/fixtures/_incoming/
 /packages/*/coverage/
 playwright-report/
 test-results/
+# end-to-end recordings (videos) stay local: never committed
+/artifacts/
 
 # editors / OS
 .vscode/*

@@ -12,7 +12,10 @@ const WHY: Record<XirrNote | Exclude<XirrSummary['reason'], 'OK'>, string> = {
   NOT_COMPUTABLE: 'Not computable',
 };
 
-/** An XIRR figure, or in words why there is none. "≈" marks approximate purchase dates. */
+/**
+ * An XIRR figure, or in words why there is none. "≈" marks approximate purchase dates.
+ * `data-volatile`: the figure ages by the day (end-to-end screenshots mask it).
+ */
 export function XirrValue({
   rate,
   why,
@@ -31,7 +34,7 @@ export function XirrValue({
     );
   }
   return (
-    <span>
+    <span data-volatile>
       {approximate && (
         <>
           <span aria-hidden>≈ </span>

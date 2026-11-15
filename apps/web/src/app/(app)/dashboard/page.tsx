@@ -204,7 +204,9 @@ export default function DashboardPage() {
           explain="Your yearly return, taking into account when you put money in and took it out. Holdings without purchase dates (from holdings statements) are left out."
         >
           {xirr.rate !== null ? (
-            <span className="num">{f.percent(xirr.rate, { signed: true, decimals: 1 })}</span>
+            <span className="num" data-volatile>
+              {f.percent(xirr.rate, { signed: true, decimals: 1 })}
+            </span>
           ) : (
             <span className="text-muted-foreground">—</span>
           )}
