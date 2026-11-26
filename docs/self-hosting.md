@@ -92,7 +92,7 @@ Mutual funds (AMFI), crypto (CoinDCX) and USD/INR (ECB via Frankfurter) need no 
 Vercel's Hobby plan is for **personal, non-commercial use**. Running a public service for others may need Pro; check Vercel's fair-use terms.
 
 1. Push your fork to GitHub, then **vercel.com → Add New → Project → Import** it.
-2. **Root Directory: `apps/web`**. Vercel detects Next.js and the pnpm workspace.
+2. **Root Directory: `apps/web`**. Vercel detects Next.js and the pnpm workspace. Node.js comes from `engines` in `apps/web/package.json` (24.x, the version Kosh is tested on), which overrides the project's Node.js setting.
 3. **Environment Variables**: set every `[REQUIRED]` variable from [.env.example](../.env.example):
 
    | Variable                                                                                              | Value                                                                                      |

@@ -5,6 +5,13 @@ Parsers are versioned independently (e.g. `zerodha.tradebook@1.0.0`).
 
 ## [Unreleased]
 
+### Fixed
+
+- BUG-031: on Vercel every API route answered an empty HTTP 500. The functions ran on Vercel's
+  default Node 26, where `firebase-admin/auth` failed to load (`ERR_REQUIRE_ESM`: `jwks-rsa`
+  requires the ESM-only `jose`). `apps/web` now pins Node 24.x, the version Kosh is tested on
+  (`apps/web/test/runtime-node.test.ts`).
+
 ## [0.3.0] - 2026-11-15
 
 M3: broker statements, a richer dashboard, and an end-to-end test suite.

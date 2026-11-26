@@ -70,3 +70,6 @@ Thumbs.db
 
 # your own Firebase project alias (copy .firebaserc.example); emulators use --project demo-kosh
 .firebaserc
+
+# local credentials and environment config (persona passwords, service-account keys): never committed
+/.secrets/
